@@ -16,6 +16,12 @@ const AppConfigPage = ({ config, renderers }: ConfigPageProps) => {
         <>
           {renderSwitch(['app', 'EmojiReply'], '表情回应', '在解析任务开始时添加表情回应，若适配器不支持需要关闭。')}
           {renderSwitch(['app', 'parseTip'], '解析提示', '发送提示信息："检测到xxx链接，开始解析"。')}
+          {renderTextField(
+            ['app', 'duplicateParseWindowMinutes'],
+            '重复解析拦截时间',
+            '同一群聊或私聊内，成功解析或主动推送后多久不再重复解析；设为 0 可关闭。单位：分钟。',
+            { type: 'number', fallback: 30, min: 0 }
+          )}
           {renderSwitch(['app', 'fakeForward'], '伪造合并转发消息', '开启后合并转发将使用触发者身份展示；关闭后使用机器人身份展示。')}
           {renderCheckboxGroup(
             ['app', 'errorLogSendTo'],

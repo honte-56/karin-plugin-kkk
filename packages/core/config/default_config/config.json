@@ -32,6 +32,7 @@
     "RenderWaitTime": 120,
     "EmojiReply": true,
     "parseTip": false,
+    "duplicateParseWindowMinutes": 30,
     "fakeForward": true,
     "errorLogSendTo": ["trigger", "allMasters"],
     "multiPageRender": true,

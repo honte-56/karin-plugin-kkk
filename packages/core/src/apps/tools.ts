@@ -1,8 +1,15 @@
-import karin, { logger } from 'node-karin'
+import karin, { logger, type Message } from 'node-karin'
 
 import { Common, downloadVideo } from '@/module'
 import { getStatisticsDB } from '@/module/db'
 import { Config } from '@/module/utils/Config'
+import {
+  createContentIdentity,
+  formatDuplicateContentMessage,
+  runWithContentDeliveryGuard,
+  shouldSendDuplicateContentReminder,
+  type ContentIdentity
+} from '@/module/utils/ContentDelivery'
 import { wrapWithErrorHandler } from '@/module/utils/ErrorHandler'
 import { Bilibili, getBilibiliID } from '@/platform/bilibili'
 import { DouYin, getDouyinID } from '@/platform/douyin'
@@ -15,6 +22,17 @@ const reg = {
   bilibili: /(bilibili\.com|b23\.tv|t\.bilibili\.com|bili2233\.cn|\bBV[1-9a-zA-Z]{10}\b|\bav\d+\b)/i,
   kuaishou: /(快手.*快手|v\.kuaishou\.com|kuaishou\.com)/,
   xiaohongshu: /(xiaohongshu\.com|xhslink\.com)/
+}
+
+const runGuardedParse = async (e: Message, identity: ContentIdentity, task: () => Promise<unknown>) => {
+  const result = await runWithContentDeliveryGuard(e, identity, task)
+  if (result.status === 'completed') return true
+
+  if (result.status === 'duplicate' && !shouldSendDuplicateContentReminder(e, identity)) return false
+
+  const message = result.status === 'processing' ? '该内容正在解析中，请稍候。' : formatDuplicateContentMessage(result.record)
+  await e.reply(message, { reply: true })
+  return false
 }
 
 // 包装抖音处理函数
@@ -34,7 +52,10 @@ const handleDouyin = wrapWithErrorHandler(
     }
     const url = String(urlMatch[0])
     const iddata = await getDouyinID(e, url)
-    await new DouYin(e, iddata, { forceBurnDanmaku }).DouyinHandler(iddata)
+    const parsed = await runGuardedParse(e, createContentIdentity('douyin', iddata), async () => {
+      await new DouYin(e, iddata, { forceBurnDanmaku }).DouyinHandler(iddata)
+    })
+    if (!parsed) return
 
     // 记录解析统计
     const groupId = e.isGroup ? e.contact?.peer || '' : ''
@@ -81,7 +102,10 @@ const handleBilibili = wrapWithErrorHandler(
       return next()
     }
     const iddata = await getBilibiliID(url)
-    await new Bilibili(e, iddata, { forceBurnDanmaku }).BilibiliHandler(iddata)
+    const parsed = await runGuardedParse(e, createContentIdentity('bilibili', iddata), async () => {
+      await new Bilibili(e, iddata, { forceBurnDanmaku }).BilibiliHandler(iddata)
+    })
+    if (!parsed) return
 
     // 记录解析统计
     const groupId = e.isGroup ? e.contact?.peer || '' : ''
@@ -107,8 +131,11 @@ const handleKuaishou = wrapWithErrorHandler(
   async (e) => {
     const kuaishouUrl = e.msg.replaceAll('\\', '').match(/(https:\/\/v\.kuaishou\.com\/\w+|https:\/\/www\.kuaishou\.com\/f\/[a-zA-Z0-9]+)/g)
     const iddata = await getKuaishouID(String(kuaishouUrl))
-    const WorkData = await fetchKuaishouData(iddata.type, iddata)
-    await new Kuaishou(e, iddata).KuaishouHandler(WorkData)
+    const parsed = await runGuardedParse(e, createContentIdentity('kuaishou', iddata), async () => {
+      const WorkData = await fetchKuaishouData(iddata.type, iddata)
+      await new Kuaishou(e, iddata).KuaishouHandler(WorkData)
+    })
+    if (!parsed) return
 
     // 记录解析统计
     const groupId = e.isGroup ? e.contact?.peer || '' : ''
@@ -138,7 +165,10 @@ const handleXiaohongshu = wrapWithErrorHandler(
       return next()
     }
     const iddata = await getXiaohongshuID(url)
-    await new Xiaohongshu(e, iddata).XiaohongshuHandler(iddata)
+    const parsed = await runGuardedParse(e, createContentIdentity('xiaohongshu', iddata), async () => {
+      await new Xiaohongshu(e, iddata).XiaohongshuHandler(iddata)
+    })
+    if (!parsed) return
 
     // 记录解析统计
     const groupId = e.isGroup ? e.contact?.peer || '' : ''
@@ -180,12 +210,14 @@ const handlePrefix = wrapWithErrorHandler(
       const videoIdMatch = e.msg.match(/video_id=([^&]+)/)
       const videoId = videoIdMatch ? videoIdMatch[1] : Date.now().toString()
 
-      await downloadVideo(e, {
-        video_url: e.msg,
-        title: {
-          timestampTitle: `tmp_${Date.now()}.mp4`,
-          originTitle: `抖音视频_${videoId}.mp4`
-        }
+      await runGuardedParse(e, createContentIdentity('douyin', { video_id: videoId }), async () => {
+        await downloadVideo(e, {
+          video_url: e.msg,
+          title: {
+            timestampTitle: `tmp_${Date.now()}.mp4`,
+            originTitle: `抖音视频_${videoId}.mp4`
+          }
+        })
       })
       return true
     } else if (reg.douyin.test(e.msg)) {

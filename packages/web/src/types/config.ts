@@ -55,6 +55,8 @@ export interface ConfigType {
     EmojiReply: boolean
     /** 解析提示 */
     parseTip: boolean
+    /** 重复解析拦截时间，单位：分钟；0 表示关闭 */
+    duplicateParseWindowMinutes: number
     /** 伪造合并转发 */
     fakeForward: boolean
     /** 错误日志发送目标 */

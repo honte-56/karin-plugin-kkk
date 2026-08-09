@@ -1,8 +1,10 @@
 import { BilibiliDBBase } from './bilibili'
+import { ContentDeliveryDBBase } from './content-delivery'
 import { DouyinDBBase } from './douyin'
 import { StatisticsDBBase } from './statistics'
 
 export * from './bilibili'
+export * from './content-delivery'
 export * from './douyin'
 export * from './statistics'
 
@@ -17,6 +19,9 @@ let bilibiliInitializing = false
 /** 统计数据库实例 */
 let statisticsDB: StatisticsDBBase | null = null
 let statisticsInitializing = false
+
+let contentDeliveryDB: ContentDeliveryDBBase | null = null
+let contentDeliveryInitializing = false
 
 /**
  * 获取或初始化 DouyinDB 实例（单例模式）
@@ -87,23 +92,46 @@ export const getStatisticsDB = async (): Promise<StatisticsDBBase> => {
   }
 }
 
+export const getContentDeliveryDB = async (): Promise<ContentDeliveryDBBase> => {
+  if (contentDeliveryDB) return contentDeliveryDB
+  if (contentDeliveryInitializing) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    return contentDeliveryDB!
+  }
+
+  contentDeliveryInitializing = true
+  try {
+    contentDeliveryDB = await new ContentDeliveryDBBase().init()
+    return contentDeliveryDB
+  } finally {
+    contentDeliveryInitializing = false
+  }
+}
+
 /**
  * 初始化所有数据库
  * @returns 初始化后的数据库实例
  */
 export const initAllDatabases = async () => {
-  const [douyin, bilibili, statistics] = await Promise.all([getDouyinDB(), getBilibiliDB(), getStatisticsDB()])
+  const [douyin, bilibili, statistics, contentDelivery] = await Promise.all([
+    getDouyinDB(),
+    getBilibiliDB(),
+    getStatisticsDB(),
+    getContentDeliveryDB()
+  ])
 
-  return { douyinDB: douyin, bilibiliDB: bilibili, statisticsDB: statistics }
+  return { douyinDB: douyin, bilibiliDB: bilibili, statisticsDB: statistics, contentDeliveryDB: contentDelivery }
 }
 
 // 导出数据库实例（延迟初始化）
 export const douyinDBInstance = await getDouyinDB()
 export const bilibiliDBInstance = await getBilibiliDB()
 export const statisticsDBInstance = await getStatisticsDB()
+export const contentDeliveryDBInstance = await getContentDeliveryDB()
 
 // 为了保持向后兼容性，保留原有的导出名称
 export { bilibiliDBInstance as bilibiliDB, douyinDBInstance as douyinDB, statisticsDBInstance as statisticsDB }
+export { contentDeliveryDBInstance as contentDeliveryDB }
 
 /**
  * 清理旧的动态缓存记录

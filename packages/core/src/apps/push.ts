@@ -13,7 +13,8 @@ const handleDouyinPush = wrapWithErrorHandler(
     return true
   },
   {
-    businessName: '抖音推送任务'
+    businessName: '抖音推送任务',
+    consecutiveFailureNotificationThreshold: 3
   }
 )
 

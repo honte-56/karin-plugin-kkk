@@ -43,6 +43,7 @@ export { sendErrorToAllMasters, sendErrorToMaster, sendErrorToTrigger } from './
 
 // 核心处理
 export { handleBusinessError, wrapWithErrorHandler } from './handler'
+export { clearBusinessFailureState, recordBusinessFailure, resetBusinessFailures } from './notification-policy'
 
 // 工具函数
 export { getPushTaskBotId, isPushTask, parseLogsToStructured, statBotId } from './utils'

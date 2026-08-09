@@ -36,6 +36,7 @@ import {
 } from '@/module'
 import { bilibiliFetcher } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
+import { createContentIdentity, mergeContentIdentities, recordGroupContentDelivery } from '@/module/utils/ContentDelivery'
 import { bilibiliProcessVideos, generateDecorationCard, getvideosize, parseAdditionalCard, TimeFormatter } from '@/platform/bilibili'
 import {
   buildBilibiliArticleRichText,
@@ -856,6 +857,19 @@ export class Bilibilipush extends Base {
               : []
 
           status = await karin.sendMsg(botId, Contact, [...watermarkedImg, ...parseButton])
+          if (status.messageId) {
+            const pushItem = data[dynamicId]
+            const identities = [createContentIdentity('bilibili', { dynamic_id: dynamicId })]
+            if (pushItem.dynamic_type === DynamicType.AV) {
+              identities.push(
+                createContentIdentity('bilibili', { bvid: pushItem.Dynamic_Data.modules.module_dynamic.major?.archive?.bvid })
+              )
+            } else if (pushItem.dynamic_type === DynamicType.LIVE_RCMD) {
+              const liveData = JSON.parse(pushItem.Dynamic_Data.modules.module_dynamic.major.live_rcmd.content)
+              identities.push(createContentIdentity('bilibili', { room_id: String(liveData.live_play_info.room_id) }))
+            }
+            await recordGroupContentDelivery(botId, groupId, mergeContentIdentities(...identities))
+          }
           const shouldParseDynamic =
             Config.bilibili.push.parsedynamic &&
             Config.bilibili.push.parseDynamicTypes.includes(

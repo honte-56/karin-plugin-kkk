@@ -27,6 +27,9 @@ export interface appConfig {
   /** 解析提示，发送提示信息："检测到xxx链接，开始解析" */
   parseTip: boolean
 
+  /** 同一会话内重复解析同一内容的拦截时间，单位：分钟；0 表示关闭 */
+  duplicateParseWindowMinutes: number
+
   /** 是否伪造合并转发消息，开启后使用触发者身份展示转发 */
   fakeForward: boolean
 

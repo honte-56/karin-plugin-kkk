@@ -11,6 +11,8 @@ export interface ErrorHandlerOptions {
    * 业务名称，用于错误报告
    */
   businessName: string
+  /** 连续失败达到该次数后才发送错误通知；成功一次后重新计数 */
+  consecutiveFailureNotificationThreshold?: number
   /**
    * 自定义错误处理函数
    * @param error - 捕获的错误对象

@@ -25,6 +25,7 @@ import {
   Render
 } from '@/module'
 import { Config } from '@/module/utils/Config'
+import { createContentIdentity, recordGroupContentDelivery } from '@/module/utils/ContentDelivery'
 import { DouyinIdData, douyinProcessVideos, getDouyinID } from '@/platform/douyin'
 import { getDouyinLiveImageSendPolicy, getWorkTypeDisplayName, getWorkTypeInfo } from '@/platform/douyin/workType'
 import type { douyinPushItem } from '@/types/config/pushlist'
@@ -379,6 +380,18 @@ export class DouYinpush extends Base {
 
           // 发送消息
           status = await karin.sendMsg(botId, Contact, [...watermarkedImg, ...parseButton])
+
+          if (status.message_id) {
+            const deliveryIdentity =
+              pushItem.pushType === 'live'
+                ? createContentIdentity('douyin', {
+                    type: 'live_room_detail',
+                    room_id: Detail_Data.room_data?.owner?.web_rid,
+                    sec_uid: pushItem.sec_uid
+                  })
+                : createContentIdentity('douyin', { aweme_id: actualAwemeId })
+            await recordGroupContentDelivery(botId, groupId, deliveryIdentity)
+          }
 
           // 如果是直播推送，更新直播状态
           if (pushItem.pushType === 'live' && 'room_data' in pushItem.Detail_Data && status.message_id) {
