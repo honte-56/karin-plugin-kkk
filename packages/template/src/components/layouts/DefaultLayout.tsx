@@ -45,11 +45,7 @@ export const DefaultLayout: React.FC<Omit<DefaultLayoutProps, 'templateType' | '
 
   return (
     <div
-      className={cn(
-        'w-360 shrink-0 bg-background text-foreground font-[HarmonyOSHans-Regular]',
-        useDarkTheme ? 'dark' : 'light',
-        className
-      )}
+      className={cn('w-360 shrink-0 bg-background text-foreground font-template', useDarkTheme ? 'dark' : 'light', className)}
       data-theme={useDarkTheme ? 'dark' : 'light'}
       id="container"
       style={{

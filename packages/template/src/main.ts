@@ -8,6 +8,7 @@ import { PreviewLayout } from './dev/preview/components/PreviewLayout'
 import type { PreviewState as DevPreviewState } from './dev/preview/types'
 import type { DataTypeMap, RenderRequest, RenderResponse, TypedRenderRequest } from './types'
 import { ComponentAutoRegistry } from './utils/ComponentAutoRegistry'
+import { resolveCssAssetUrl } from './utils/cssAsset'
 import { DevDataManager } from './utils/DevDataManager'
 import { logger } from './utils/logger'
 
@@ -582,51 +583,8 @@ class HtmlWrapper {
     this.resourceManager = resourceManager
   }
 
-  private getAssetMimeType(assetPath: string): string {
-    const ext = path.extname(assetPath).toLowerCase()
-
-    switch (ext) {
-      case '.woff2':
-        return 'font/woff2'
-      case '.woff':
-        return 'font/woff'
-      case '.ttf':
-        return 'font/ttf'
-      case '.otf':
-        return 'font/otf'
-      case '.eot':
-        return 'application/vnd.ms-fontobject'
-      case '.svg':
-        return 'image/svg+xml'
-      case '.png':
-        return 'image/png'
-      case '.jpg':
-      case '.jpeg':
-        return 'image/jpeg'
-      case '.gif':
-        return 'image/gif'
-      case '.webp':
-        return 'image/webp'
-      case '.avif':
-        return 'image/avif'
-      default:
-        return 'application/octet-stream'
-    }
-  }
-
-  private toDataUri(assetPath: string): string | null {
-    if (!fs.existsSync(assetPath)) {
-      logger.warn('未找到静态资源文件，跳过内联:', assetPath)
-      return null
-    }
-
-    const mimeType = this.getAssetMimeType(assetPath)
-    const fileBuffer = fs.readFileSync(assetPath)
-    return `data:${mimeType};base64,${fileBuffer.toString('base64')}`
-  }
-
   /**
-   * 加载并处理CSS文件，将其中的相对资源路径转换为内联 data URI
+   * 加载并处理CSS文件：小资源内联，大资源使用 file URL
    * @param cssFilePath CSS文件的完整路径
    * @returns 处理后的CSS内容字符串
    */
@@ -646,8 +604,11 @@ class HtmlWrapper {
       }
 
       const absoluteAssetPath = path.resolve(cssDir, normalizedAssetPath)
-      const dataUri = this.toDataUri(absoluteAssetPath)
-      return dataUri ? `url(${quote}${dataUri}${quote})` : `url(${quote}${normalizedAssetPath}${quote})`
+      const resolvedUrl = resolveCssAssetUrl(absoluteAssetPath)
+      if (!resolvedUrl) {
+        logger.warn('未找到静态资源文件，保留原始地址:', absoluteAssetPath)
+      }
+      return resolvedUrl ? `url(${quote}${resolvedUrl}${quote})` : `url(${quote}${normalizedAssetPath}${quote})`
     })
   }
 
@@ -667,7 +628,8 @@ class HtmlWrapper {
       styleFiles.unshift(
         path.join(fontDir, 'bilifont', 'font.css'),
         path.join(fontDir, 'mono', 'font.css'),
-        path.join(fontDir, 'fansmedal-num', 'font.css')
+        path.join(fontDir, 'fansmedal-num', 'font.css'),
+        path.join(fontDir, 'noto-color-emoji', 'font.css')
       )
     }
 

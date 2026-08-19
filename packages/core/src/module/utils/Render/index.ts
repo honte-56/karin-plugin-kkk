@@ -132,6 +132,7 @@ export const Render = async <P extends DynamicRenderPath>(
       waitUntil: 'load',
       timeout: Config.app.RenderWaitTime * 1000
     },
+    waitForFunction: "document.fonts.status === 'loaded'",
     omitBackground: true
   })
 
