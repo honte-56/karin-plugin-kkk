@@ -1,8 +1,11 @@
+import type { AmagiSuccess, DyUserInfo } from '@ikenxuan/amagi'
 import { logger } from 'node-karin'
 
 import { douyinDB } from '@/module'
+import type { douyinFetcher } from '@/module/utils/amagiClient'
+import type { douyinPushItem } from '@/types/config/pushlist'
 
-import type { DouyinPushItem } from './types'
+import type { DouyinLivePushItem } from './types'
 
 /**
  * 处理直播推送
@@ -11,21 +14,18 @@ import type { DouyinPushItem } from './types'
  */
 export async function processLiveStream(
   sec_uid: string,
-  userinfo: any,
-  item: any,
+  userinfo: AmagiSuccess<DyUserInfo>,
+  item: douyinPushItem,
   targets: Array<{ groupId: string; botId: string }>,
-  amagi: any
-): Promise<DouyinPushItem | null> {
-  const pushType = 'live'
-
+  amagi: { douyin: { fetcher: typeof douyinFetcher } }
+): Promise<DouyinLivePushItem | null> {
   // 获取缓存的直播状态
   const liveStatus = await douyinDB.getLiveStatus(sec_uid)
 
   // 检查用户是否正在直播
   if (userinfo.data.user.live_status === 1) {
     const UserInfoData = await amagi.douyin.fetcher.fetchUserProfile({
-      sec_uid: userinfo.data.user.sec_uid,
-      typeMode: 'strict'
+      sec_uid: userinfo.data.user.sec_uid
     })
 
     if (!UserInfoData.data.user?.live_status || UserInfoData.data.user.live_status !== 1) {
@@ -41,8 +41,7 @@ export async function processLiveStream(
     const room_data = JSON.parse(UserInfoData.data.user.room_data)
     const liveInfo = await amagi.douyin.fetcher.fetchLiveRoomInfo({
       room_id: UserInfoData.data.user.room_id_str,
-      web_rid: room_data.owner.web_rid,
-      typeMode: 'strict'
+      web_rid: room_data.owner.web_rid
     })
 
     // 如果之前没有直播，现在开播了，需要推送
@@ -54,7 +53,7 @@ export async function processLiveStream(
         sec_uid,
         create_time: Date.now(),
         targets,
-        pushType,
+        pushType: 'live',
         Detail_Data: {
           user_info: userinfo,
           room_data: JSON.parse(userinfo.data.user.room_data),

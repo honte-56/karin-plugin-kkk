@@ -11,7 +11,7 @@ export default defineConfig({
   clean: false,
   deps: {
     onlyBundle: false,
-    neverBundle: ['axios', 'zod']
+    neverBundle: ['axios', 'zod', '@karinjs/template-react']
   },
   dts: {
     emitDtsOnly: true,
@@ -22,9 +22,8 @@ export default defineConfig({
       moduleResolution: 'bundler',
       paths: {
         '@kkk/richtext': ['../richtext/src/index.ts'],
-        template: ['../template/src/index.ts'],
-        'template/*': ['../template/src/*'],
-        '@ikenxuan/amagi': ['../amagi/packages/core/src/index.ts']
+        '@template/*': ['./template/*'],
+        '@ikenxuan/amagi': ['../../../amagi/packages/core/src/index.ts']
       }
     }
   }

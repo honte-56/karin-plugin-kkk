@@ -1,10 +1,9 @@
+import type { ApiErrorData } from '@template/template/other/handlerError/components/types'
 import { logger, type Message } from 'node-karin'
-import type { ApiErrorProps } from 'template/types/platforms/other/handlerError'
 
 import { getBuildMetadata } from '@/module'
 import { EmojiReactionManager } from '@/module/utils/EmojiReaction'
 
-import { recordBusinessFailure, resetBusinessFailures } from './notification-policy'
 import { renderErrorImage } from './render'
 import { sendErrorToAllMasters, sendErrorToMaster, sendErrorToTrigger } from './sender'
 import { getStrategies } from './strategy'
@@ -14,9 +13,8 @@ import { injectBotToEventForPushTask, isPushTask, parseLogsToStructured } from '
 export const handleBusinessError = async (
   error: Error,
   options: ErrorHandlerOptions,
-  logs: ApiErrorProps['data']['logs'],
-  event: Message,
-  shouldNotify = true
+  logs: ApiErrorData['logs'],
+  event: Message
 ): Promise<'handled' | undefined> => {
   try {
     logger.debug(`[ErrorHandler] 开始处理业务错误: ${options.businessName}`)
@@ -33,20 +31,18 @@ export const handleBusinessError = async (
       adapterInfo
     }
 
-    if (shouldNotify) {
-      for (const strategy of getStrategies()) {
-        if (strategy.match(ctx)) {
-          logger.debug(`[ErrorHandler] 匹配策略: ${strategy.name}`)
-          const result = await strategy.handle(ctx)
-          if (result === 'handled') return 'handled'
-        }
+    for (const strategy of getStrategies()) {
+      if (strategy.match(ctx)) {
+        logger.debug(`[ErrorHandler] 匹配策略: ${strategy.name}`)
+        const result = await strategy.handle(ctx)
+        if (result === 'handled') return 'handled'
       }
-
-      const img = await renderErrorImage(ctx)
-      await sendErrorToTrigger(ctx, img)
-      await sendErrorToMaster(ctx, img)
-      await sendErrorToAllMasters(ctx, img)
     }
+
+    const img = await renderErrorImage(ctx)
+    await sendErrorToTrigger(ctx, img)
+    await sendErrorToMaster(ctx, img)
+    await sendErrorToAllMasters(ctx, img)
 
     if (options.customErrorHandler) {
       try {
@@ -83,7 +79,6 @@ export const wrapWithErrorHandler = <R>(fn: (e: Message, next: () => unknown) =>
 
     try {
       const result = await ctx.run()
-      resetBusinessFailures(options)
 
       if (emojiManager) {
         successTimer = setTimeout(() => {
@@ -106,14 +101,8 @@ export const wrapWithErrorHandler = <R>(fn: (e: Message, next: () => unknown) =>
 
       await new Promise((resolve) => setTimeout(resolve, 100))
       const structuredLogs = parseLogsToStructured(ctx.logs())
-      const notification = recordBusinessFailure(options)
-      if (!notification.shouldNotify) {
-        logger.warn(
-          `[ErrorHandler] ${options.businessName} 连续失败 ${notification.count} 次，未达到通知阈值 ${options.consecutiveFailureNotificationThreshold}`
-        )
-      }
 
-      const result = await handleBusinessError(error as Error, options, structuredLogs, normalizedEvent, notification.shouldNotify)
+      const result = await handleBusinessError(error as Error, options, structuredLogs, normalizedEvent)
       if (result === 'handled') return undefined as R
       throw error
     }

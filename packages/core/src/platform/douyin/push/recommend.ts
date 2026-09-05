@@ -1,11 +1,12 @@
-import { DyUserInfo, Result } from '@ikenxuan/amagi'
+import { AmagiSuccess, DyUserInfo } from '@ikenxuan/amagi'
 import { logger } from 'node-karin'
 
 import { douyinDB } from '@/module'
 import { douyinFetcher } from '@/module/utils/amagiClient'
+import { buildDouyinWorkDetail } from '@/platform/douyin/types'
 import { douyinPushItem } from '@/types/config/pushlist'
 
-import type { DouyinPushItem } from './types'
+import type { DouyinWorkPushItem } from './types'
 
 /**
  * 处理推荐列表推送
@@ -15,14 +16,14 @@ import type { DouyinPushItem } from './types'
 export async function processRecommendList(
   contentList: any[],
   sec_uid: string,
-  userinfo: Result<DyUserInfo>,
+  userinfo: AmagiSuccess<DyUserInfo>,
   item: douyinPushItem,
   targets: Array<{ groupId: string; botId: string }>,
   force: boolean = false
-): Promise<DouyinPushItem[]> {
+): Promise<DouyinWorkPushItem[]> {
   const pushType = 'recommend'
   const listName = '推荐列表'
-  const result: DouyinPushItem[] = []
+  const result: DouyinWorkPushItem[] = []
 
   // 获取所有目标群组的历史状态
   const groupHistoryStatus = new Map<string, boolean>()
@@ -55,12 +56,11 @@ export async function processRecommendList(
     }
 
     // 获取作品作者的用户信息
-    let authorUserInfo: Result<DyUserInfo> | undefined
+    let authorUserInfo: AmagiSuccess<DyUserInfo> | undefined
     try {
       if (aweme.author?.sec_uid) {
         authorUserInfo = await douyinFetcher.fetchUserProfile({
-          sec_uid: aweme.author.sec_uid,
-          typeMode: 'strict'
+          sec_uid: aweme.author.sec_uid
         })
         logger.debug(`获取作品作者 ${aweme.author.nickname} 的用户信息成功`)
       }
@@ -75,11 +75,7 @@ export async function processRecommendList(
       create_time: aweme.create_time,
       targets: validTargets,
       pushType,
-      Detail_Data: {
-        ...aweme,
-        user_info: userinfo,
-        author_user_info: authorUserInfo
-      },
+      Detail_Data: buildDouyinWorkDetail(aweme, { user_info: userinfo, author_user_info: authorUserInfo }),
       avatar_img: 'https://p3-pc.douyinpic.com/aweme/1080x1080/' + userinfo.data.user.avatar_larger.uri,
       living: false
     })

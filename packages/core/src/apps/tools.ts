@@ -21,13 +21,16 @@ const reg = {
   douyinCDN: /https:\/\/aweme\.snssdk\.com\/aweme\/v1\/play/i, // 抖音 CDN 下载链接
   bilibili: /(bilibili\.com|b23\.tv|t\.bilibili\.com|bili2233\.cn|\bBV[1-9a-zA-Z]{10}\b|\bav\d+\b)/i,
   kuaishou: /(快手.*快手|v\.kuaishou\.com|kuaishou\.com)/,
-  xiaohongshu: /(xiaohongshu\.com|xhslink\.com)/
+  xiaohongshu: /(xiaohongshu\.com|xhslink\.(?:com|cn))/
 }
+
+// 管理类命令本身内嵌平台链接（如 #kkk推送全局忽略{url}），需放行给对应命令处理，
+// 否则会被「默认解析」(videoTool 开启时优先级为 -Infinity) 的解析器抢先消费
+const passthroughCommandReg = /^#kkk推送全局忽略/
 
 const runGuardedParse = async (e: Message, identity: ContentIdentity, task: () => Promise<unknown>) => {
   const result = await runWithContentDeliveryGuard(e, identity, task)
   if (result.status === 'completed') return true
-
   if (result.status === 'duplicate' && !shouldSendDuplicateContentReminder(e, identity)) return false
 
   const message = result.status === 'processing' ? '该内容正在解析中，请稍候。' : formatDuplicateContentMessage(result.record)
@@ -38,7 +41,7 @@ const runGuardedParse = async (e: Message, identity: ContentIdentity, task: () =
 // 包装抖音处理函数
 const handleDouyin = wrapWithErrorHandler(
   async (e, next) => {
-    if (e.msg.startsWith('#测试')) {
+    if (e.msg.startsWith('#测试') || passthroughCommandReg.test(e.msg)) {
       return next()
     }
 
@@ -79,6 +82,11 @@ const handleDouyin = wrapWithErrorHandler(
 // 包装B站处理函数
 const handleBilibili = wrapWithErrorHandler(
   async (e, next) => {
+    // 管理类命令内嵌B站链接（如 #kkk推送全局忽略{url}），放行给对应命令，避免被自动解析抢占
+    if (passthroughCommandReg.test(e.msg)) {
+      return next()
+    }
+
     e.msg = e.msg.replace(/\\/g, '') // 移除消息中的反斜杠
 
     // 判断是否为弹幕解析（通过 #弹幕解析 命令触发）
@@ -210,7 +218,7 @@ const handlePrefix = wrapWithErrorHandler(
       const videoIdMatch = e.msg.match(/video_id=([^&]+)/)
       const videoId = videoIdMatch ? videoIdMatch[1] : Date.now().toString()
 
-      await runGuardedParse(e, createContentIdentity('douyin', { video_id: videoId }), async () => {
+      const parsed = await runGuardedParse(e, createContentIdentity('douyin', { video_id: videoId }), async () => {
         await downloadVideo(e, {
           video_url: e.msg,
           title: {
@@ -219,6 +227,7 @@ const handlePrefix = wrapWithErrorHandler(
           }
         })
       })
+      if (!parsed) return false
       return true
     } else if (reg.douyin.test(e.msg)) {
       // 正常的抖音分享链接

@@ -1,13 +1,12 @@
 import fs from 'node:fs'
 
 import type { DySearchInfo } from '@ikenxuan/amagi'
+import type { DouyinUserListData } from '@template/template/douyin/userlist/components/types'
 import { format } from 'date-fns'
 import type { AdapterType, ImageElement, Message } from 'node-karin'
 import karin, { common, logger, segment } from 'node-karin'
-import { DouyinUserListProps } from 'template/types/platforms/douyin'
 
 import {
-  applyWatermarkToImages,
   Base,
   baseHeaders,
   buildGoogleMotionPhoto,
@@ -26,7 +25,7 @@ import {
 } from '@/module'
 import { Config } from '@/module/utils/Config'
 import { createContentIdentity, recordGroupContentDelivery } from '@/module/utils/ContentDelivery'
-import { DouyinIdData, douyinProcessVideos, getDouyinID } from '@/platform/douyin'
+import { DouyinIdData, buildDouyinPlayUrl, douyinProcessVideos, type dyVideo, getDouyinID } from '@/platform/douyin'
 import { getDouyinLiveImageSendPolicy, getWorkTypeDisplayName, getWorkTypeInfo } from '@/platform/douyin/workType'
 import type { douyinPushItem } from '@/types/config/pushlist'
 
@@ -35,10 +34,10 @@ import { processLiveStream } from './push/live'
 import { processPostList } from './push/post'
 import { processRecommendList } from './push/recommend'
 import { renderFavoriteImage, renderLiveImage, renderRecommendImage, renderWorkImage } from './push/render'
-import { type DouyinPushItem, type WillBePushList } from './push/types'
+import { type DouyinPushItem, type DouyinWorkPushItem, type WillBePushList } from './push/types'
 
 // Re-export types for backward compatibility
-export type { DouyinPushItem }
+export type { DouyinPushItem, DouyinWorkPushItem }
 
 const douyinBaseHeaders: downLoadFileOptions['headers'] = {
   ...baseHeaders,
@@ -125,8 +124,7 @@ export class DouYinpush extends Base {
           logger.info(`自动获取用户 ${item.remark || item.short_id} 的 sec_uid`)
           const searchResult = await this.amagi.douyin.fetcher.searchContent({
             query: item.short_id,
-            type: 'user',
-            typeMode: 'strict'
+            type: 'user'
           })
 
           // 在搜索结果中查找匹配的用户
@@ -227,7 +225,10 @@ export class DouYinpush extends Base {
     for (const awemeId in data) {
       const pushItem = data[awemeId]
       const actualAwemeId = awemeId.replace(/^(post|favorite|recommend|live)_/, '') // 移除推送类型前缀
-      const shareUrl = pushItem.Detail_Data.share_url ?? `https://live.douyin.com/${pushItem.Detail_Data.room_data?.owner.web_rid}`
+      const shareUrl =
+        pushItem.pushType === 'live'
+          ? `https://live.douyin.com/${pushItem.Detail_Data.room_data?.owner.web_rid}`
+          : (pushItem.Detail_Data.share_url ?? `https://www.douyin.com/video/${actualAwemeId}`)
       let pushTypeLabel: string
       switch (pushItem.pushType) {
         case 'post':
@@ -254,37 +255,27 @@ export class DouYinpush extends Base {
         `)
 
       const Detail_Data = pushItem.Detail_Data
-      const workTypeInfo = getWorkTypeInfo(Detail_Data as any)
+      const workTypeInfo = getWorkTypeInfo(Detail_Data)
       const skip = await skipDynamic(pushItem)
       if (skip) {
         logger.warn(`作品 https://www.douyin.com/video/${actualAwemeId} 已被处理，跳过`)
       }
       let img: ImageElement[] = []
       let iddata: DouyinIdData = { type: 'one_work' }
+      /** 按画质配置选中、即将下载发送的那一路视频源 */
+      let selectedVideo: dyVideo | null = null
       this.injectBotToEventForRender(pushItem.targets)
 
       if (!skip) {
-        iddata = await getDouyinID(
-          this.e,
-          Detail_Data.share_url ?? 'https://live.douyin.com/' + Detail_Data.room_data?.owner.web_rid,
-          false
-        )
+        iddata = await getDouyinID(this.e, shareUrl, false)
       }
 
       if (!skip) {
-        const realUrl =
-          pushItem.pushType !== 'live' &&
-          workTypeInfo.isVideo &&
-          Config.douyin.push.shareType === 'web' &&
-          (await new Networks({
-            url: Detail_Data.share_url,
-            headers: {
-              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
-              Accept: '*/*',
-              'Accept-Encoding': 'gzip, deflate, br',
-              Connection: 'keep-alive'
-            }
-          }).getLocation())
+        // 画质选档必须早于渲染和分享链接拼接：卡片上展示的清晰度要和后面实际下载的那一路视频源完全一致，
+        // 否则会出现「卡片写 4K、实际下载 720p」的错位。
+        if (pushItem.pushType !== 'live' && workTypeInfo.isVideo && pushItem.Detail_Data.video?.bit_rate?.length) {
+          selectedVideo = douyinProcessVideos(pushItem.Detail_Data.video.bit_rate, Config.douyin.videoQuality)[0]
+        }
 
         let workShareLink: string | undefined
         if (pushItem.pushType !== 'live') {
@@ -294,21 +285,21 @@ export class DouYinpush extends Base {
             // 图文和合辑使用无追踪参数的短链接，降低二维码密度并提高扫描识别率。
             workShareLink = `https://www.douyin.com/note/${actualAwemeId}`
           } else if (Config.douyin.push.shareType === 'web') {
-            workShareLink = realUrl || `https://www.douyin.com/video/${actualAwemeId}`
+            // 视频同样用无追踪参数的规范链接：share_url 302 之后只是多出一串追踪参数，白搭一次网络请求还会拉高二维码密度
+            workShareLink = `https://www.douyin.com/video/${actualAwemeId}`
           } else {
-            workShareLink = Detail_Data.video?.play_addr?.uri
-              ? `https://aweme.snssdk.com/aweme/v1/play/?video_id=${Detail_Data.video.play_addr.uri}&ratio=1080p&line=0`
-              : `https://www.douyin.com/video/${actualAwemeId}`
+            // 直链模式：优先用选档后的视频源拼播放地址，二维码内容与卡片展示的清晰度一致
+            const playAddr = selectedVideo?.play_addr ?? pushItem.Detail_Data.video?.play_addr
+            workShareLink = playAddr ? buildDouyinPlayUrl(playAddr) : `https://www.douyin.com/video/${actualAwemeId}`
           }
         }
 
         switch (pushItem.pushType) {
           case 'live': {
-            if (!('room_data' in pushItem.Detail_Data && Detail_Data.live_data)) break
+            if (!pushItem.Detail_Data.room_data || !pushItem.Detail_Data.live_data) break
             img = await renderLiveImage({
               e: this.e,
-              Detail_Data,
-              skipWatermark: true,
+              Detail_Data: pushItem.Detail_Data,
               dynamicTypeLabel: '直播动态推送'
             })
             break
@@ -317,11 +308,10 @@ export class DouYinpush extends Base {
           case 'favorite': {
             img = await renderFavoriteImage({
               e: this.e,
-              Detail_Data,
+              Detail_Data: pushItem.Detail_Data,
               create_time: pushItem.create_time,
               shareLink: workShareLink!,
-              remark: pushItem.remark,
-              skipWatermark: true
+              remark: pushItem.remark
             })
             break
           }
@@ -329,11 +319,10 @@ export class DouYinpush extends Base {
           case 'recommend': {
             img = await renderRecommendImage({
               e: this.e,
-              Detail_Data,
+              Detail_Data: pushItem.Detail_Data,
               create_time: pushItem.create_time,
               shareLink: workShareLink!,
-              remark: pushItem.remark,
-              skipWatermark: true
+              remark: pushItem.remark
             })
             break
           }
@@ -342,10 +331,10 @@ export class DouYinpush extends Base {
           default: {
             img = await renderWorkImage({
               e: this.e,
-              Detail_Data,
+              Detail_Data: pushItem.Detail_Data,
               create_time: pushItem.create_time,
               shareLink: workShareLink!,
-              skipWatermark: true
+              videoSource: selectedVideo
             })
             break
           }
@@ -360,26 +349,26 @@ export class DouYinpush extends Base {
         if (!skip) {
           const Contact = karin.contactGroup(groupId)
 
-          // 为当前目标注入 bot 并应用水印
+          // 为当前目标注入 bot，后续解析下载沿用该 bot 身份
           const bot = karin.getBot(botId) as AdapterType
           const eventWithBot = this.e as Message & { bot?: AdapterType; selfId?: string }
           eventWithBot.bot = bot
           eventWithBot.selfId = botId
-          const watermarkedImg = img ? applyWatermarkToImages(img, this.e) : []
+          const pushImg = img ?? []
 
           // 仅 QQ 官方机器人支持按钮：非直播作品在卡片末尾追加「解析」回调按钮，点击后下发 #解析 + 分享链接
           const parseButton =
-            bot?.adapter?.name === 'QQ Official Bot' && pushItem.pushType !== 'live' && Detail_Data.share_url
+            bot?.adapter?.name === 'QQ Official Bot' && pushItem.pushType !== 'live' && pushItem.Detail_Data.share_url
               ? [
                   segment.button([
-                    { text: '解析', callback: true, data: `#解析${Detail_Data.share_url}` },
+                    { text: '解析', callback: true, data: `#解析${pushItem.Detail_Data.share_url}` },
                     { text: '帮助', callback: true, data: `#kkk帮助` }
                   ])
                 ]
               : []
 
           // 发送消息
-          status = await karin.sendMsg(botId, Contact, [...watermarkedImg, ...parseButton])
+          status = await karin.sendMsg(botId, Contact, [...pushImg, ...parseButton])
 
           if (status.message_id) {
             const deliveryIdentity =
@@ -398,23 +387,26 @@ export class DouYinpush extends Base {
             await douyinDB.updateLiveStatus(pushItem.sec_uid, true)
           }
 
-          // 是否一同解析该新作品？
-          if (Config.douyin.push.parsedynamic && status.message_id) {
+          // 是否一同解析该新作品？（直播推送没有可解析的作品内容）
+          if (pushItem.pushType !== 'live' && Config.douyin.push.parsedynamic && status.message_id) {
+            // 收窄为作品类推送的作品详情
+            const Detail_Data = pushItem.Detail_Data
             logger.debug(`开始解析作品，类型为：${getWorkTypeDisplayName(workTypeInfo)}`)
             // 如果新作品是视频
-            if (workTypeInfo.isVideo) {
+            if (workTypeInfo.isVideo && Detail_Data.video) {
               /** 默认视频下载地址 */
-              let downloadUrl = `https://aweme.snssdk.com/aweme/v1/play/?video_id=${Detail_Data.video.play_addr.uri}&ratio=1080p&line=0`
+              let downloadUrl = buildDouyinPlayUrl(Detail_Data.video.play_addr)
               // 根据配置文件自动选择分辨率
               logger.debug(`开始排除不符合条件的视频分辨率；\n
                     共拥有${logger.yellow(Detail_Data.video.bit_rate.length)}个视频源\n
                     视频ID：${logger.green(Detail_Data.aweme_id)}\n
                     分享链接：${logger.green(Detail_Data.share_url)}
                     `)
-              const videoObj = douyinProcessVideos(Detail_Data.video.bit_rate, Config.douyin.videoQuality)
+              // 复用渲染前已选好的视频源，卡片展示的清晰度与实际下载的必然一致
+              const videoObj = selectedVideo ?? douyinProcessVideos(Detail_Data.video.bit_rate, Config.douyin.videoQuality)[0]
               logger.debug('获取精确下载地址')
               downloadUrl = await new Networks({
-                url: videoObj[0].play_addr.url_list[0],
+                url: videoObj.play_addr.url_list[0],
                 headers: douyinBaseHeaders
               }).getLongLink()
               // 下载视频
@@ -473,13 +465,15 @@ export class DouYinpush extends Base {
                   }
 
                   /** 动图/短片 */
-                  const liveimg = await downloadFile(
-                    `https://aweme.snssdk.com/aweme/v1/play/?video_id=${item.video.play_addr_h264.uri}&ratio=1080p&line=0`,
-                    {
-                      title: `Douyin_tmp_V_${Date.now()}.mp4`,
-                      headers: douyinBaseHeaders
-                    }
-                  )
+                  const livePlayAddr = item.video?.play_addr_h264
+                  if (!livePlayAddr?.uri) {
+                    logger.warn(`合辑第 ${index + 1} 个动态媒体缺少视频源，跳过`)
+                    continue
+                  }
+                  const liveimg = await downloadFile(buildDouyinPlayUrl(livePlayAddr), {
+                    title: `Douyin_tmp_V_${Date.now()}.mp4`,
+                    headers: douyinBaseHeaders
+                  })
 
                   if (liveimg.filepath) {
                     const outputPath = Common.tempDri.video + `Douyin_Result_${Date.now()}.mp4`
@@ -597,7 +591,7 @@ export class DouYinpush extends Base {
               } else if (Detail_Data.images) {
                 // 普通图集处理逻辑
                 // 检查是否包含 live 图（clip_type !== 2 且 clip_type !== undefined）
-                const hasLiveImage = Detail_Data.images.some((item: any) => item.clip_type !== 2 && item.clip_type !== undefined)
+                const hasLiveImage = Detail_Data.images.some((item) => item.clip_type !== 2 && item.clip_type !== undefined)
 
                 if (hasLiveImage) {
                   // 包含 live 图，需要特殊处理
@@ -630,19 +624,22 @@ export class DouYinpush extends Base {
                     // 静态图片，clip_type为2或undefined
                     if (item.clip_type === 2 || item.clip_type === undefined) {
                       const image_url = item.url_list[2] ?? item.url_list[1]
+                      if (!image_url) continue
                       const imageUrl = await processImageUrl(image_url, Detail_Data.desc, index)
                       processedImages.push(segment.image(imageUrl))
                       continue
                     }
 
                     /** live 图 */
-                    const liveimg = await downloadFile(
-                      `https://aweme.snssdk.com/aweme/v1/play/?video_id=${item.video.play_addr_h264.uri}&ratio=1080p&line=0`,
-                      {
-                        title: `Douyin_tmp_V_${Date.now()}.mp4`,
-                        headers: douyinBaseHeaders
-                      }
-                    )
+                    const livePlayAddr = item.video?.play_addr_h264
+                    if (!livePlayAddr?.uri) {
+                      logger.warn(`图集第 ${index + 1} 个动态媒体缺少视频源，跳过`)
+                      continue
+                    }
+                    const liveimg = await downloadFile(buildDouyinPlayUrl(livePlayAddr), {
+                      title: `Douyin_tmp_V_${Date.now()}.mp4`,
+                      headers: douyinBaseHeaders
+                    })
 
                     if (liveimg.filepath) {
                       const outputPath = Common.tempDri.video + `Douyin_Result_${Date.now()}.mp4`
@@ -763,12 +760,13 @@ export class DouYinpush extends Base {
                   let image_url
                   for (const [index, item] of Detail_Data.images.entries()) {
                     image_url = item.url_list[2] ?? item.url_list[1] // 图片地址
+                    if (!image_url) continue
                     const imageUrl = await processImageUrl(image_url, Detail_Data.desc, index)
                     imageres.push(segment.image(imageUrl))
                   }
                   const bot = karin.getBot(botId) as AdapterType
 
-                  if (imageres.length === 1) {
+                  if (imageres.length === 1 && image_url) {
                     // 单张图片直接发送
                     const imageUrl = await processImageUrl(image_url, Detail_Data.desc)
                     await bot.sendMsg(Contact, [segment.image(imageUrl)])
@@ -821,7 +819,7 @@ export class DouYinpush extends Base {
 
         logger.debug(`开始获取用户：${item.remark}（${sec_uid}）的内容，推送类型：${pushTypes.join(', ')}`)
 
-        const userinfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid, typeMode: 'strict' })
+        const userinfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid })
 
         const targets = item.group_id.map((groupWithBot) => {
           const [groupId, botId] = groupWithBot.split(':')
@@ -859,8 +857,7 @@ export class DouYinpush extends Base {
               listName = '作品列表'
               const videolist = await this.amagi.douyin.fetcher.fetchUserVideoList({
                 sec_uid,
-                number: 15,
-                typeMode: 'strict'
+                number: 15
               })
               contentList = videolist.data.aweme_list || []
               break
@@ -868,8 +865,7 @@ export class DouYinpush extends Base {
               listName = '喜欢列表'
               const favoritelist = await this.amagi.douyin.fetcher.fetchUserFavoriteList({
                 sec_uid,
-                number: 15,
-                typeMode: 'strict'
+                number: 15
               })
               if (favoritelist.data.aweme_list.length === 0)
                 logger.warn(`${item.remark}(${item.short_id}) 获取到的喜欢列表数量为零！此博主可能未公开他/她的喜欢列表`)
@@ -879,8 +875,7 @@ export class DouYinpush extends Base {
               listName = '推荐列表'
               const recommendlist = await this.amagi.douyin.fetcher.fetchUserRecommendList({
                 sec_uid,
-                number: 15,
-                typeMode: 'strict'
+                number: 15
               })
               if (recommendlist.data.aweme_list.length === 0)
                 logger.warn(`${item.remark}(${item.short_id}) 获取到的推荐列表数量为零！此博主可能未公开他/她的推荐列表`)
@@ -892,7 +887,7 @@ export class DouYinpush extends Base {
 
           // 根据推送类型调用不同的处理函数
           if (contentList.length > 0) {
-            let pushItems: DouyinPushItem[] = []
+            let pushItems: DouyinWorkPushItem[] = []
             switch (pushType) {
               case 'post':
                 pushItems = await processPostList(contentList, sec_uid, userinfo, item, targets)
@@ -970,7 +965,7 @@ export class DouYinpush extends Base {
 
       // 使用匹配到的用户的 sec_uid 进行下一步请求
       const sec_uid = matchedUser.sec_uid
-      const UserInfoData = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid, typeMode: 'strict' })
+      const UserInfoData = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid })
 
       /** 处理抖音号 */
       let user_shortid
@@ -1089,11 +1084,11 @@ export class DouYinpush extends Base {
       return
     }
 
-    const renderOpt: DouyinUserListProps['data']['renderOpt'] = []
+    const renderOpt: DouyinUserListData['renderOpt'] = []
 
     for (const subscription of subscriptions) {
       const sec_uid = subscription.sec_uid
-      const userInfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid, typeMode: 'strict' })
+      const userInfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid })
 
       // 查找配置文件中对应的全局开关状态
       const configItem = Config.pushlist.douyin?.find((item: douyinPushItem) => item.sec_uid === sec_uid)
@@ -1187,7 +1182,7 @@ export class DouYinpush extends Base {
     if (updateList.length > 0) {
       for (const i of updateList) {
         // 从外部数据源获取用户备注信息
-        const userinfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid: i.sec_uid, typeMode: 'strict' })
+        const userinfo = await this.amagi.douyin.fetcher.fetchUserProfile({ sec_uid: i.sec_uid })
         const remark = userinfo.data.user.nickname
 
         // 在配置文件中找到对应的用户，并更新其备注信息
@@ -1221,8 +1216,8 @@ export class DouYinpush extends Base {
  * @returns 是否应该跳过推送
  */
 const skipDynamic = async (PushItem: DouyinPushItem): Promise<boolean> => {
-  // 如果是直播动态，不跳过
-  if ('liveStatus' in PushItem.Detail_Data) {
+  // 直播动态不做内容过滤
+  if (PushItem.pushType === 'live' || 'liveStatus' in PushItem.Detail_Data) {
     return false
   }
 

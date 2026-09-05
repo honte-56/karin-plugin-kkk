@@ -1,11 +1,12 @@
-import { DyUserInfo, Result } from '@ikenxuan/amagi'
+import { AmagiSuccess, DyUserInfo } from '@ikenxuan/amagi'
 import { format, fromUnixTime } from 'date-fns'
 import { logger } from 'node-karin'
 
 import { douyinDB } from '@/module'
+import { buildDouyinWorkDetail } from '@/platform/douyin/types'
 import { douyinPushItem } from '@/types/config/pushlist'
 
-import type { DouyinPushItem } from './types'
+import type { DouyinWorkPushItem } from './types'
 
 /**
  * 处理作品列表推送
@@ -15,13 +16,13 @@ import type { DouyinPushItem } from './types'
 export async function processPostList(
   contentList: any[],
   sec_uid: string,
-  userinfo: Result<DyUserInfo>,
+  userinfo: AmagiSuccess<DyUserInfo>,
   item: douyinPushItem,
   targets: Array<{ groupId: string; botId: string }>
-): Promise<DouyinPushItem[]> {
+): Promise<DouyinWorkPushItem[]> {
   const pushType = 'post'
   const listName = '作品列表'
-  const result: DouyinPushItem[] = []
+  const result: DouyinWorkPushItem[] = []
 
   for (const aweme of contentList) {
     const nowSeconds = Math.floor(Date.now() / 1000)
@@ -62,10 +63,7 @@ export async function processPostList(
           create_time: aweme.create_time,
           targets: validTargets,
           pushType,
-          Detail_Data: {
-            ...aweme,
-            user_info: userinfo
-          },
+          Detail_Data: buildDouyinWorkDetail(aweme, { user_info: userinfo }),
           avatar_img: 'https://p3-pc.douyinpic.com/aweme/1080x1080/' + userinfo.data.user.avatar_larger.uri,
           living: false
         })

@@ -47,8 +47,15 @@ export interface ConfigType {
     renderScale: number
     /** 主题 */
     Theme: number
-    /** 移除水印 */
-    RemoveWatermark: boolean
+    /** 封面氛围背景贡献度参数（0~1） */
+    ambientCover: {
+      /** 模糊封面层不透明度 */
+      coverOpacity: number
+      /** 压色罩两端（顶/底）不透明度 */
+      overlayEdgeOpacity: number
+      /** 压色罩中间带不透明度 */
+      overlayMiddleOpacity: number
+    }
     /** 渲染等待时间 */
     RenderWaitTime: number
     /** 表情回应 */

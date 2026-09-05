@@ -2,82 +2,155 @@
 
 # Changelog
 
-## [2.42.0](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.2...v2.42.0) (2026-08-02)
-
-
-### ✨ 新功能
-
-* **douyin:** 弹幕烧录支持显示点赞数量与表情 ([1d46900](https://github.com/ikenxuan/karin-plugin-kkk/commit/1d4690068478b201084259757024da4c612f91ef))
+## [2.42.5](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.42.4...v2.42.5) (2026-09-05)
 
 
 ### 🐛 错误修复
 
-* ci？ ([d5dfb4f](https://github.com/ikenxuan/karin-plugin-kkk/commit/d5dfb4f0f663c19292d40af6d3948ba62815a32c))
-* ci？ ([2f713f0](https://github.com/ikenxuan/karin-plugin-kkk/commit/2f713f08f17b99f03d3337f87b1829781c18fd57))
+* 抖音部分接口失效 ([#356](https://github.com/ikenxuan/karin-plugin-kkk/issues/356)) ([2f5319b](https://github.com/ikenxuan/karin-plugin-kkk/commit/2f5319b7dbcd7f52adf470ef190785a9e5b80666))
+* 移除 `@ikenxuan/watermark` ，所有图片强制展示底部版本信息。 ([ac96199](https://github.com/ikenxuan/karin-plugin-kkk/commit/ac96199847062c74c051be4fe1dd5ca6dca632dc))
 
-## [2.41.2](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.1...v2.41.2) (2026-08-02)
+
+### 💄 UI 优化
+
+* **bilibili:** 添加站内图文链接节点及相关图标支持 ([f9932f8](https://github.com/ikenxuan/karin-plugin-kkk/commit/f9932f8d480a929e3cb7c1b7cf7321179cc023dc))
+* 登录二维码添加触发者头像 ([e498c5f](https://github.com/ikenxuan/karin-plugin-kkk/commit/e498c5f4469ef43c0a0e046dcdbd551b088fc927))
+
+## [2.42.4](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.42.3...v2.42.4) (2026-09-03)
 
 
 ### 🐛 错误修复
 
-* ci ([b4611b2](https://github.com/ikenxuan/karin-plugin-kkk/commit/b4611b2d8d754271c23da96d51eb8f29592cb848))
+* 二维码链接拼接错误 ([ee8bc51](https://github.com/ikenxuan/karin-plugin-kkk/commit/ee8bc51510cffbbea0d352230153f409016031de))
 
-## [2.41.1](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.0...v2.41.1) (2026-08-01)
+## [2.42.3](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.42.2...v2.42.3) (2026-09-01)
 
 
 ### 🐛 错误修复
 
-* **douyin:** 修复部分状态下会发送空合并转发消息的情况，兜底插入视频 fix [#343](https://github.com/ikenxuan/karin-plugin-kkk/issues/343) ([0e785c9](https://github.com/ikenxuan/karin-plugin-kkk/commit/0e785c9be1fc8caa84509ac2393d3b0e44263151))
+* **douyin:** 优化视频播放链接构建，支持新格式并确保二维码与下载一致性 ([417ad3c](https://github.com/ikenxuan/karin-plugin-kkk/commit/417ad3c826b8403bb0a71004f6e7210bd01283cc))
+* use @snapka/puppeteer ([38f9d5b](https://github.com/ikenxuan/karin-plugin-kkk/commit/38f9d5b0773c9da4f4b853d61715e639cdc776e2))
+* 二维码链接拼接错误 ([4772801](https://github.com/ikenxuan/karin-plugin-kkk/commit/4772801ded3dd9f2d658de9693572036385bea82))
+* 类型安全修复 ([6fc8a6b](https://github.com/ikenxuan/karin-plugin-kkk/commit/6fc8a6b591af8fa270397bb0b0d7bc34d39abe0c))
+
+
+### 💄 UI 优化
+
+* **douyin:** douyin/video-work 支持显示视频分辨率 ([6fc8a6b](https://github.com/ikenxuan/karin-plugin-kkk/commit/6fc8a6b591af8fa270397bb0b0d7bc34d39abe0c))
 
 
 ### 🧰 其他更新
 
-* use pnpm v11 ([8587b7f](https://github.com/ikenxuan/karin-plugin-kkk/commit/8587b7fe660f7f3f987c2038f86a8432cf51d8c8))
+* remove @karinjs/plugin-adapter-discordbot devDependencies ([1db3e35](https://github.com/ikenxuan/karin-plugin-kkk/commit/1db3e356924a1dd5ef53fcbda1717d1c54ecc740))
+
+
+### ♻️ 代码重构
+
+* **douyin:** 用 amagi passport 接口替换 Puppeteer 登录 ([#353](https://github.com/ikenxuan/karin-plugin-kkk/issues/353)) ([3cf285a](https://github.com/ikenxuan/karin-plugin-kkk/commit/3cf285aed960e12ba0fc5b21dab6bd12e452c211))
+
+## [2.42.2](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.42.1...v2.42.2) (2026-08-21)
+
+
+### 🐛 错误修复
+
+* 更新 @karinjs/template-react 版本至 0.1.1，并调整相关依赖，修复部分功能被抢指令的问题 ([4d14521](https://github.com/ikenxuan/karin-plugin-kkk/commit/4d145219fdff36e11feded2dbd71d3808ee3afbf))
+
+
+### 📦 依赖更新
+
+* update @ikenxuan/watermark to v1.3.1 ([ee7ad27](https://github.com/ikenxuan/karin-plugin-kkk/commit/ee7ad27aca069dba258c6f587261b231451ad0c8))
+* 更新部分开发依赖 ([111609f](https://github.com/ikenxuan/karin-plugin-kkk/commit/111609fa95986da4aa8f6fded737a71435c330e3))
+
+## [2.42.1](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.42.0...v2.42.1) (2026-08-18)
+
+
+### 🐛 错误修复
+
+* **core:** 更新时间戳至 2026-08-04 ([e9b50f7](https://github.com/ikenxuan/karin-plugin-kkk/commit/e9b50f76ba1f8a4977f5ada604551742e82f379b))
+* 小红书支持xhslink.cn close [#347](https://github.com/ikenxuan/karin-plugin-kkk/issues/347) ([da7bfd2](https://github.com/ikenxuan/karin-plugin-kkk/commit/da7bfd2d7bd510f0a5918aeb6e4d6abb91614604))
+* 移除不必要的 z-index 属性以简化样式 ([7bc7c2c](https://github.com/ikenxuan/karin-plugin-kkk/commit/7bc7c2cf0682a9c791be5ca1b0b228efc607e30a))
+
+
+### 💄 UI 优化
+
+* 细优部分模板样式 ([5601c9b](https://github.com/ikenxuan/karin-plugin-kkk/commit/5601c9b25cfac2ee52e3ad811644e8aa4a479051))
+* 重写小红书笔记信息模板 ([da7bfd2](https://github.com/ikenxuan/karin-plugin-kkk/commit/da7bfd2d7bd510f0a5918aeb6e4d6abb91614604))
+
+
+### ♻️ 代码重构
+
+* **core:** 更新 tsdown 配置，使用对象形式定义入口文件 ([b00ee12](https://github.com/ikenxuan/karin-plugin-kkk/commit/b00ee12fb525c20a4cc56e5ed82851f8ffffdeb9))
+* use @karinjs/template-react ([#348](https://github.com/ikenxuan/karin-plugin-kkk/issues/348)) ([f4b0c23](https://github.com/ikenxuan/karin-plugin-kkk/commit/f4b0c23e754d6eb5dbee6fb7081f88f4d306eece))
+
+
+### 📦 依赖更新
+
+* @karinjs/template-react更新到0.0.1-beta.6 ([6e557ec](https://github.com/ikenxuan/karin-plugin-kkk/commit/6e557ec3609390de3fba60e5be37947cb25f6a9a))
+
+## [2.42.0](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.2...v2.42.0) (2026-08-02)
+
+### ✨ 新功能
+
+- **douyin:** 弹幕烧录支持显示点赞数量与表情 ([1d46900](https://github.com/ikenxuan/karin-plugin-kkk/commit/1d4690068478b201084259757024da4c612f91ef))
+
+### 🐛 错误修复
+
+- ci？ ([d5dfb4f](https://github.com/ikenxuan/karin-plugin-kkk/commit/d5dfb4f0f663c19292d40af6d3948ba62815a32c))
+- ci？ ([2f713f0](https://github.com/ikenxuan/karin-plugin-kkk/commit/2f713f08f17b99f03d3337f87b1829781c18fd57))
+
+## [2.41.2](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.1...v2.41.2) (2026-08-02)
+
+### 🐛 错误修复
+
+- ci ([b4611b2](https://github.com/ikenxuan/karin-plugin-kkk/commit/b4611b2d8d754271c23da96d51eb8f29592cb848))
+
+## [2.41.1](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.41.0...v2.41.1) (2026-08-01)
+
+### 🐛 错误修复
+
+- **douyin:** 修复部分状态下会发送空合并转发消息的情况，兜底插入视频 fix [#343](https://github.com/ikenxuan/karin-plugin-kkk/issues/343) ([0e785c9](https://github.com/ikenxuan/karin-plugin-kkk/commit/0e785c9be1fc8caa84509ac2393d3b0e44263151))
+
+### 🧰 其他更新
+
+- use pnpm v11 ([8587b7f](https://github.com/ikenxuan/karin-plugin-kkk/commit/8587b7fe660f7f3f987c2038f86a8432cf51d8c8))
 
 ## [2.41.0](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.40.3...v2.41.0) (2026-07-30)
 
-
 ### ✨ 新功能
 
-* **bilibili:** 添加匿名评论请求配置并更新相关请求逻辑 ([#341](https://github.com/ikenxuan/karin-plugin-kkk/issues/341)) ([f578413](https://github.com/ikenxuan/karin-plugin-kkk/commit/f5784133e8eb116c716e1d63c67f89cab44cec0e))
-
+- **bilibili:** 添加匿名评论请求配置并更新相关请求逻辑 ([#341](https://github.com/ikenxuan/karin-plugin-kkk/issues/341)) ([f578413](https://github.com/ikenxuan/karin-plugin-kkk/commit/f5784133e8eb116c716e1d63c67f89cab44cec0e))
 
 ### 🐛 错误修复
 
-* **bilibili:** 优化开播推送逻辑 ([b704c11](https://github.com/ikenxuan/karin-plugin-kkk/commit/b704c11b2683b6d78cee868676e01bd258e3945c))
+- **bilibili:** 优化开播推送逻辑 ([b704c11](https://github.com/ikenxuan/karin-plugin-kkk/commit/b704c11b2683b6d78cee868676e01bd258e3945c))
 
 ## [2.40.3](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.40.2...v2.40.3) (2026-07-29)
 
-
 ### 💄 UI 优化
 
-* **douyiin:** 优化图文作品详情组件中描述板块的行间距 ([43d6cdc](https://github.com/ikenxuan/karin-plugin-kkk/commit/43d6cdcefc51986a0ffb6feb18c32d3bbdcd9375))
+- **douyiin:** 优化图文作品详情组件中描述板块的行间距 ([43d6cdc](https://github.com/ikenxuan/karin-plugin-kkk/commit/43d6cdcefc51986a0ffb6feb18c32d3bbdcd9375))
 
 ## [2.40.2](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.40.1...v2.40.2) (2026-07-28)
 
-
 ### 🐛 错误修复
 
-* 优化接口库客户端热重载功能 ([3e3bd9d](https://github.com/ikenxuan/karin-plugin-kkk/commit/3e3bd9d5e2c40a40158a4a6db034367895f3fd8d))
+- 优化接口库客户端热重载功能 ([3e3bd9d](https://github.com/ikenxuan/karin-plugin-kkk/commit/3e3bd9d5e2c40a40158a4a6db034367895f3fd8d))
 
 ## [2.40.1](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.40.0...v2.40.1) (2026-07-19)
 
-
 ### 💄 UI 优化
 
-* 微调 `#kkk`  版本 ([82aa4e3](https://github.com/ikenxuan/karin-plugin-kkk/commit/82aa4e3cf5dc27e6ba69f0936bbc3ff2a59025a5))
+- 微调 `#kkk` 版本 ([82aa4e3](https://github.com/ikenxuan/karin-plugin-kkk/commit/82aa4e3cf5dc27e6ba69f0936bbc3ff2a59025a5))
 
 ## [2.40.0](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.39.0...v2.40.0) (2026-07-18)
 
-
 ### ✨ 新功能
 
-* 重写 `#kkk版本` 相关UI ([782cf58](https://github.com/ikenxuan/karin-plugin-kkk/commit/782cf58d6dacdf7494a681c51b4417c28568071c))
-
+- 重写 `#kkk版本` 相关UI ([782cf58](https://github.com/ikenxuan/karin-plugin-kkk/commit/782cf58d6dacdf7494a681c51b4417c28568071c))
 
 ### 📝 文档更新
 
-* update readme ([b20b53b](https://github.com/ikenxuan/karin-plugin-kkk/commit/b20b53bfefb74375ff2a1448ce0935e5e0d9993d))
+- update readme ([b20b53b](https://github.com/ikenxuan/karin-plugin-kkk/commit/b20b53bfefb74375ff2a1448ce0935e5e0d9993d))
 
 ## [2.39.0](https://github.com/ikenxuan/karin-plugin-kkk/compare/v2.38.0...v2.39.0) (2026-07-13)
 
