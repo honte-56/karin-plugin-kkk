@@ -345,7 +345,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                       tickLabels: {
                         fontSize: 24,
                         fill: dark ? '#d4d4d8' : '#52525b',
-                        fontFamily: 'HarmonyOSHans-Regular',
+                        fontFamily: 'var(--font-template)',
                         angle: -45,
                         textAnchor: 'end',
                         verticalAnchor: 'middle'
@@ -364,7 +364,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                         style={{
                           fontSize: 24,
                           fill: dark ? '#a1a1aa' : '#71717a',
-                          fontFamily: 'HarmonyOSHans-Regular'
+                          fontFamily: 'var(--font-template)'
                         }}
                       />
                     }
@@ -382,7 +382,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                         style={{
                           fontSize: 24,
                           fill: dark ? '#a1a1aa' : '#71717a',
-                          fontFamily: 'HarmonyOSHans-Regular'
+                          fontFamily: 'var(--font-template)'
                         }}
                       />
                     }
@@ -391,7 +391,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                       tickLabels: {
                         fontSize: 28,
                         fill: dark ? '#d4d4d8' : '#52525b',
-                        fontFamily: 'HarmonyOSHans-Regular'
+                        fontFamily: 'var(--font-template)'
                       },
                       grid: { stroke: dark ? '#52525b' : '#d4d4d8', strokeWidth: 1 }
                     }}
@@ -426,7 +426,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                         style={{
                           fontSize: 10,
                           fill: dark ? '#d4d4d8' : '#52525b',
-                          fontFamily: 'HarmonyOSHans-Regular'
+                          fontFamily: 'var(--font-template)'
                         }}
                         dy={25}
                       />
@@ -442,7 +442,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                         style={{
                           fontSize: 10,
                           fill: dark ? '#d4d4d8' : '#52525b',
-                          fontFamily: 'HarmonyOSHans-Regular'
+                          fontFamily: 'var(--font-template)'
                         }}
                         dy={-15}
                       />
@@ -490,7 +490,7 @@ export const GlobalStatistics: React.FC<PosterProps<GlobalStatisticsData>> = (pr
                   style={{
                     labels: {
                       fontSize: 40,
-                      fontFamily: 'HarmonyOSHans-Regular',
+                      fontFamily: 'var(--font-template)',
                       fontWeight: 'bold',
                       fill: dark ? '#fff' : '#000'
                     }

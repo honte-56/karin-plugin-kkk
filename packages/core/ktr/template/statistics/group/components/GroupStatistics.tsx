@@ -214,7 +214,7 @@ export const GroupStatistics: React.FC<PosterProps<GroupStatisticsData>> = (prop
                     style={{
                       labels: {
                         fontSize: 40,
-                        fontFamily: 'HarmonyOSHans-Regular',
+                        fontFamily: 'var(--font-template)',
                         fontWeight: 'bold',
                         fill: dark ? '#fff' : '#000'
                       }

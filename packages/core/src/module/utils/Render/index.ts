@@ -2,6 +2,7 @@ import pathModule from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createTemplateRenderer, type DataOf, type LoadedRegistry } from '@karinjs/template-react'
+import { emojiFontHead } from '@template/utils/emojiFont'
 import type { ImageElement, Message } from 'node-karin'
 import { db, karinPathHtml, logger, render, segment } from 'node-karin'
 
@@ -29,6 +30,7 @@ const renderTemplate = createTemplateRenderer(import.meta.url, {
   renderer: {
     outputDir: pathModule.join(karinPathHtml, Root.pluginName),
     htmlFileName: 'timestamp',
+    html: { headExtra: emojiFontHead(pathModule.join(Root.pluginPath, 'resources')) },
     ...(isDevRuntime ? {} : { captureDir: undefined })
   }
 })

@@ -5,6 +5,7 @@ import { defineConfig } from '@karinjs/template-react'
 import type { ViteDevServer } from 'vite'
 
 import { AVATAR_PROXY_PATH, isProxyableAvatarUrl } from './ktr/utils/avatarProxy'
+import { emojiFontDevPlugin } from './ktr/utils/emojiFont'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -86,7 +87,7 @@ export default defineConfig({
     open: false
   },
   vite: ({ command }) => ({
-    plugins: command === 'serve' ? [fontProxyPlugin(), avatarProxyPlugin()] : [],
+    plugins: command === 'serve' ? [fontProxyPlugin(), avatarProxyPlugin(), emojiFontDevPlugin()] : [],
     resolve: {
       alias: [{ find: '@kkk/richtext', replacement: path.resolve(__dirname, '../richtext/src/index.ts') }]
     },
