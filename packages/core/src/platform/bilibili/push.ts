@@ -40,6 +40,7 @@ import { bilibiliProcessVideos, generateDecorationCard, getvideosize, parseAddit
 import {
   buildBilibiliArticleRichText,
   buildBilibiliDynamicRichText,
+  buildBilibiliForwardContent,
   buildBilibiliRichTextForwardMessage,
   buildBilibiliVideoDescRichText,
   getUsernameMetadata
@@ -548,31 +549,8 @@ export class Bilibilipush extends Base {
           }
           /** 处理转发动态 */
           case DynamicType.FORWARD: {
-            // 处理话题
             const md = data[dynamicId].Dynamic_Data.modules.module_dynamic
-            if (md.topic) {
-              const { name } = md.topic
-              const desc = md.desc!
-              desc.rich_text_nodes ??= []
-              desc.rich_text_nodes.unshift({ orig_text: name, jump_url: '', text: name, type: 'topic' })
-              desc.text = desc.text ? `${name}\n\n${desc.text}` : name
-            }
-
-            const text = buildBilibiliDynamicRichText(
-              data[dynamicId].Dynamic_Data.modules.module_dynamic.desc!.text,
-              data[dynamicId].Dynamic_Data.modules.module_dynamic.desc!.rich_text_nodes
-            )
-            /** 富文本节点：查看图片 */
-            const imgList = []
-            if (data[dynamicId].Dynamic_Data.modules.module_dynamic.desc) {
-              for (const richTxtItem of data[dynamicId].Dynamic_Data.modules.module_dynamic.desc.rich_text_nodes) {
-                if (richTxtItem.type === 'RICH_TEXT_NODE_TYPE_VIEW_PICTURE') {
-                  for (const pic of richTxtItem.pics) {
-                    imgList.push(pic.src)
-                  }
-                }
-              }
-            }
+            const { text, imgList } = buildBilibiliForwardContent(md)
 
             let original_content: BilibiliForwardOriginalContentProps['original_content'] = {}
             switch (data[dynamicId].Dynamic_Data.orig.type) {

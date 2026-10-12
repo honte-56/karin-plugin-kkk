@@ -1,4 +1,4 @@
-import { ArticleContent } from '@ikenxuan/amagi'
+import { ArticleContent, type BiliUserDynamic, type DynamicType } from '@ikenxuan/amagi'
 import {
   createAtNode,
   createBlockquoteNode,
@@ -59,6 +59,35 @@ export const buildUsernameRichText = (metadata: UsernameMetadata): RichTextDocum
   return createRichTextDocument([createTextNode(metadata.name)], {
     platform: 'bilibili'
   })
+}
+
+type ForwardDynamicModule = Extract<BiliUserDynamic['data']['items'][number], { type: DynamicType.FORWARD }>['modules']['module_dynamic']
+type ForwardContent = {
+  desc: ForwardDynamicModule['desc'] | null
+  topic: ForwardDynamicModule['topic']
+}
+
+/** 转发文案可以为空；在渲染边界补全正文，避免修改接口返回的数据。 */
+export const buildBilibiliForwardContent = (md: ForwardContent) => {
+  let text = md.desc?.text ?? ''
+  const richTextNodes = [...(md.desc?.rich_text_nodes ?? [])]
+  if (md.topic) {
+    const { name } = md.topic
+    richTextNodes.unshift({ orig_text: name, jump_url: '', text: name, type: 'topic' })
+    text = text ? `${name}\n\n${text}` : name
+  }
+
+  const imgList: string[] = []
+  for (const node of richTextNodes) {
+    if (node.type === 'RICH_TEXT_NODE_TYPE_VIEW_PICTURE') {
+      for (const pic of node.pics) imgList.push(pic.src)
+    }
+  }
+
+  return {
+    text: buildBilibiliDynamicRichText(text, richTextNodes),
+    imgList
+  }
 }
 
 /**

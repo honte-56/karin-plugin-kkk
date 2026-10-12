@@ -46,6 +46,7 @@ import { type BiliDanmakuElem, burnBiliDanmaku, getHotDanmaku, mergeAndBurnBili 
 import {
   buildBilibiliArticleRichText,
   buildBilibiliDynamicRichText,
+  buildBilibiliForwardContent,
   buildBilibiliRichTextForwardMessage,
   buildBilibiliVideoDescRichText,
   getUsernameMetadata
@@ -631,30 +632,8 @@ export class Bilibili extends Base {
           }
           /** 转发动态 */
           case DynamicType.FORWARD: {
-            // 处理话题
             const md = dynamicInfo.data.data.item.modules.module_dynamic
-            if (md.topic) {
-              const { name } = md.topic
-              const desc = md.desc
-              desc.rich_text_nodes ??= []
-              desc.rich_text_nodes.unshift({ orig_text: name, jump_url: '', text: name, type: 'topic' })
-              desc.text = desc.text ? `${name}\n\n${desc.text}` : name
-            }
-
-            const text = buildBilibiliDynamicRichText(
-              dynamicInfo.data.data.item.modules.module_dynamic.desc.text,
-              dynamicInfo.data.data.item.modules.module_dynamic.desc.rich_text_nodes
-            )
-
-            // 富文本节点：查看图片
-            const imgList = []
-            for (const richTxtItem of dynamicInfo.data.data.item.modules.module_dynamic.desc.rich_text_nodes) {
-              if (richTxtItem.type === 'RICH_TEXT_NODE_TYPE_VIEW_PICTURE') {
-                for (const pic of richTxtItem.pics) {
-                  imgList.push(pic.src)
-                }
-              }
-            }
+            const { text, imgList } = buildBilibiliForwardContent(md)
             let original_content: BilibiliForwardOriginalContentProps['original_content'] = {}
             switch (dynamicInfo.data.data.item.orig.type) {
               // 转发视频动态
