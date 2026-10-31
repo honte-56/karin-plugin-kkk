@@ -580,6 +580,12 @@ export class Bilibilipush extends Base {
                 }
                 break
               }
+              // Forwarded article dynamics use the same opus payload as image dynamics.
+              case DynamicType.ARTICLE:
+                if (!data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major?.opus) {
+                  logger.warn('转发的专栏动态缺少 opus 数据，无法解析原动态')
+                  break
+                }
               case DynamicType.DRAW: {
                 // 处理话题
                 const origMd = data[dynamicId].Dynamic_Data.orig.modules.module_dynamic
