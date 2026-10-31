@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
+// The verification/replay flow is covered by risk-verify-wiring.test.ts.
+// Keep error-envelope unit tests isolated from rendering and database startup.
+vi.mock('@/module/utils/RiskVerify', () => ({ handleRiskChallenge: vi.fn(async () => false) }))
+
 /** 一条 v7 失败信封，平台业务码 12061（B站 UP 主关闭评论区） */
 const failureEnvelope = {
   success: false as const,
@@ -219,9 +223,10 @@ describe('softFetch 放行指定的平台业务码', () => {
 
   it('成功时 isSoftFailure 为假，data 可直接读', async () => {
     runtime.state.envelope = successEnvelope
-    const result = await softFetch(() => probe(bilibiliFetcher).fetchThing() as Promise<never>, [
-      SOFT_ERROR_CODES.BILIBILI_COMMENTS_DISABLED
-    ])
+    const result = await softFetch(
+      () => probe(bilibiliFetcher).fetchThing() as Promise<never>,
+      [SOFT_ERROR_CODES.BILIBILI_COMMENTS_DISABLED]
+    )
 
     expect(isSoftFailure(result, SOFT_ERROR_CODES.BILIBILI_COMMENTS_DISABLED)).toBe(false)
     if (!isSoftFailure(result, SOFT_ERROR_CODES.BILIBILI_COMMENTS_DISABLED)) {

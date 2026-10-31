@@ -1,4 +1,4 @@
-import { qualityOptions, sendContentOptions } from '../options'
+import { permissionOptions, qualityOptions, sendContentOptions } from '../options'
 import { getValue, includesValue } from '../utils'
 import type { ConfigPageProps } from './pageTypes'
 
@@ -26,6 +26,18 @@ const XiaohongshuConfigPage = ({ config, renderers, classes }: ConfigPageProps) 
           min: 1,
           disabled: !xiaohongshuEnabled || !includesValue(xiaohongshuSendContent, 'comment')
         })}
+        {renderTextField(
+          ['xiaohongshu', 'subCommentLimit'],
+          '子评论请求数量',
+          '大于 2 时需要配置小红书 ck（平台不允许游客获取二级评论）。',
+          {
+            type: 'number',
+            fallback: 2,
+            min: 2,
+            max: 20,
+            disabled: !xiaohongshuEnabled || !includesValue(xiaohongshuSendContent, 'comment')
+          }
+        )}
       </div>
       {renderSubSection(
         '渲染与画质设置',
@@ -51,6 +63,10 @@ const XiaohongshuConfigPage = ({ config, renderers, classes }: ConfigPageProps) 
             }
           )}
         </>
+      )}
+      {renderSubSection(
+        '权限设置',
+        <>{renderSelectField(['xiaohongshu', 'loginPerm'], '谁可以触发扫码登录', '修改后需重启。', permissionOptions)}</>
       )}
     </>
   )

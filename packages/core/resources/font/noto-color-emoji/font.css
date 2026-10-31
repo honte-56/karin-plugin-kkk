@@ -4,4 +4,5 @@
   font-weight: 400;
   font-style: normal;
   font-display: block;
+  unicode-range: U+0-1F, U+21-9F, U+A1-10FFFF;
 }

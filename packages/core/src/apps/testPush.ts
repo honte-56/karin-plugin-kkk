@@ -1,22 +1,31 @@
-import type { AmagiSuccess, DyUserInfo } from '@ikenxuan/amagi'
-import karin, { type ImageElement, logger } from 'node-karin'
+import type { DouyinUserProfileResponse } from '@ikenxuan/amagi'
+import karin, { type ImageElement } from 'node-karin'
 
 import { douyinFetcher } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
 import { wrapWithErrorHandler } from '@/module/utils/ErrorHandler'
+import { logger } from '@/module/utils/logger'
 import { getDouyinID } from '@/platform/douyin/getID'
 import { renderFavoriteImage, renderLiveImage, renderRecommendImage, renderWorkImage } from '@/platform/douyin/push/render'
+import { toDouyinShortUrl } from '@/platform/douyin/shortUrl'
 import { buildDouyinWorkDetail } from '@/platform/douyin/types'
+import type { DouyinWorkDetailData } from '@/platform/douyin/types'
 import { buildDouyinPlayUrl, douyinProcessVideos, type dyVideo } from '@/platform/douyin/videoQuality'
 import { getWorkTypeInfo } from '@/platform/douyin/workType'
 
-/** 构建与生产推送一致的作品二维码链接。 */
-function buildWorkShareLink(aweme: any, selectedVideo: dyVideo | null): string {
+/** 构建与生产推送一致的作品二维码短链（签发失败回退原链接）。 */
+async function buildWorkShareLink(aweme: DouyinWorkDetailData, selectedVideo: dyVideo | null): Promise<string> {
   const workTypeInfo = getWorkTypeInfo(aweme)
-  if (workTypeInfo.isArticle) return `https://www.douyin.com/article/${aweme.aweme_id}`
-  if (workTypeInfo.isImage) return `https://www.douyin.com/note/${aweme.aweme_id}`
-  const playAddr = selectedVideo?.play_addr ?? aweme.video?.play_addr
-  return playAddr ? buildDouyinPlayUrl(playAddr) : `https://www.douyin.com/video/${aweme.aweme_id}`
+  let target: string
+  if (workTypeInfo.isArticle) {
+    target = `https://www.douyin.com/article/${aweme.aweme_id}`
+  } else if (workTypeInfo.isImage) {
+    target = `https://www.douyin.com/note/${aweme.aweme_id}`
+  } else {
+    const playAddr = selectedVideo?.play_addr ?? aweme.video?.play_addr
+    target = playAddr ? buildDouyinPlayUrl(playAddr) : `https://www.douyin.com/video/${aweme.aweme_id}`
+  }
+  return await toDouyinShortUrl(target)
 }
 
 /**
@@ -67,12 +76,12 @@ const handleTestPush = wrapWithErrorHandler(
         }
         const aweme = workData.data.aweme_detail
         const userinfo = await douyinFetcher.fetchUserProfile({ sec_uid: aweme.author.sec_uid })
-        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo })
+        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo.data })
         // 与生产推送一致：先按画质配置选档，二维码链接和卡片清晰度都从选中那一路视频源派生
         const selectedVideo = aweme.video?.bit_rate?.length
           ? douyinProcessVideos(aweme.video.bit_rate, Config.douyin.videoQuality)[0]
           : null
-        const shareLink = buildWorkShareLink(Detail_Data, selectedVideo)
+        const shareLink = await buildWorkShareLink(Detail_Data, selectedVideo)
         images = await renderWorkImage({
           e,
           Detail_Data,
@@ -104,17 +113,17 @@ const handleTestPush = wrapWithErrorHandler(
           return true
         }
         const aweme = favoriteData.data.aweme_list[0]
-        let authorUserInfo: AmagiSuccess<DyUserInfo> | undefined
+        let authorUserInfo: DouyinUserProfileResponse | undefined
         try {
-          authorUserInfo = await douyinFetcher.fetchUserProfile({ sec_uid: aweme.author.sec_uid })
+          authorUserInfo = (await douyinFetcher.fetchUserProfile({ sec_uid: aweme.author.sec_uid })).data
         } catch {
           /* ignore */
         }
-        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo, author_user_info: authorUserInfo })
+        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo.data, author_user_info: authorUserInfo })
         const selectedVideo = aweme.video?.bit_rate?.length
           ? douyinProcessVideos(aweme.video.bit_rate, Config.douyin.videoQuality)[0]
           : null
-        const shareLink = buildWorkShareLink(Detail_Data, selectedVideo)
+        const shareLink = await buildWorkShareLink(Detail_Data, selectedVideo)
         images = await renderFavoriteImage({
           e,
           Detail_Data,
@@ -146,17 +155,17 @@ const handleTestPush = wrapWithErrorHandler(
           return true
         }
         const aweme = recommendData.data.aweme_list[0]
-        let authorUserInfo: AmagiSuccess<DyUserInfo> | undefined
+        let authorUserInfo: DouyinUserProfileResponse | undefined
         try {
-          authorUserInfo = await douyinFetcher.fetchUserProfile({ sec_uid: aweme.author.sec_uid })
+          authorUserInfo = (await douyinFetcher.fetchUserProfile({ sec_uid: aweme.author.sec_uid })).data
         } catch {
           /* ignore */
         }
-        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo, author_user_info: authorUserInfo })
+        const Detail_Data = buildDouyinWorkDetail(aweme, { user_info: userinfo.data, author_user_info: authorUserInfo })
         const selectedVideo = aweme.video?.bit_rate?.length
           ? douyinProcessVideos(aweme.video.bit_rate, Config.douyin.videoQuality)[0]
           : null
-        const shareLink = buildWorkShareLink(Detail_Data, selectedVideo)
+        const shareLink = await buildWorkShareLink(Detail_Data, selectedVideo)
         images = await renderRecommendImage({
           e,
           Detail_Data,
@@ -190,11 +199,11 @@ const handleTestPush = wrapWithErrorHandler(
           return true
         }
         const room_data = JSON.parse(user.room_data)
-        const liveInfo = await douyinFetcher.fetchLiveRoomInfo({
-          room_id: user.room_id_str,
-          web_rid: room_data.owner.web_rid
-        })
-        const Detail_Data = { user_info: userinfo, room_data, live_data: liveInfo }
+        // room_id 在 amagi 里是 internalParam（不在公开参数类型里）：用变量承载，
+        // 保住原来的 `room_id_str` 查询参数，也不与公开契约的类型检查打架
+        const liveParams = { room_id: user.room_id_str, web_rid: room_data.owner.web_rid }
+        const liveInfo = await douyinFetcher.fetchLiveRoomInfo(liveParams)
+        const Detail_Data = { user_info: userinfo.data, room_data, live_data: liveInfo.data }
         images = await renderLiveImage({ e, Detail_Data })
         if (!images.length) {
           e.reply('渲染直播状态推送图片失败')

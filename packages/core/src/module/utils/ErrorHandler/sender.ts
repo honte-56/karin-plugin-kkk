@@ -1,4 +1,6 @@
-import karin, { config, logger, segment } from 'node-karin'
+import karin, { config, segment } from 'node-karin'
+
+import { logger } from '@/module/utils/logger'
 
 import { getReachableMasterBots } from '../bot'
 import { Config } from '../Config'
@@ -119,7 +121,7 @@ export const sendErrorToAllMasters = async (
  *
  * @returns
  */
-const resolveSingleMasterTarget = async (
+export const resolveSingleMasterTarget = async (
   event: ErrorContext['event'],
   isPush: boolean
 ): Promise<{ master: string; botId: string } | undefined> => {

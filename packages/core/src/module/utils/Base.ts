@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 
-import karin, { type Contact, logger, Message, segment } from 'node-karin'
+import karin, { type Contact, Message, segment } from 'node-karin'
 import type { AxiosHeaders, AxiosRequestConfig, Method, RawAxiosRequestHeaders } from 'node-karin/axios'
 
 import { baseHeaders, Common, compressVideo, extractTotalBytesFromHeaders, getMediaDuration, Networks } from '@/module/utils'
 import { Config } from '@/module/utils/Config'
+import { logger } from '@/module/utils/logger'
 import type { pushlistConfig } from '@/types/config/pushlist'
 
 import { AmagiBase } from './amagiClient'
@@ -76,6 +77,8 @@ type MethodsHeaders = Partial<
  * @defaultValue headers - {}
  */
 export type downLoadFileOptions = {
+  /** Per-attempt retries; CDN failover can advance immediately. */
+  maxRetries?: number
   /** 文件名 */
   title: string
   /**
@@ -293,10 +296,9 @@ export const uploadFile = async (event: Message, file: fileInfo, videoUrl: strin
     throw error // 重新抛出错误，让 wrapWithErrorHandler 能够捕获
   } finally {
     const filePath = file.filepath
-    Common.registerVideoPreview(filePath, Config.app.removeCache, 30 * 60 * 1000)
-    logger.mark(
-      `临时预览地址：http://localhost:${process.env.HTTP_PORT!}/kkk/ssr/video/${encodeURIComponent(filePath.split('/').pop() ?? '')}`
-    )
+    const previewInfo = Common.registerVideoPreview(filePath, Config.app.removeCache, 30 * 60 * 1000)
+    // 预览地址用随机令牌寻址，不暴露磁盘文件名
+    logger.mark(`临时预览地址：http://localhost:${process.env.HTTP_PORT!}/kkk/ssr/video/${previewInfo.token}`)
     if (Config.app.removeCache) {
       logger.info(`文件 ${filePath} 将在 30 分钟后删除`)
     }
@@ -379,7 +381,7 @@ export const downloadFile = async (videoUrl: string, opt: downLoadFileOptions): 
       headers: opt.headers ?? baseHeaders,
       filepath: opt.filepath ?? Common.tempDri.video + opt.title,
       timeout: 60000, // 增加超时时间
-      maxRetries: 3, // 增加重试次数
+      maxRetries: opt.maxRetries ?? 3,
       throttle: throttleConfig
     }).downloadStream((downloadedBytes, totalBytes) => {
       // 定义进度条长度及生成进度条字符串的函数
@@ -413,8 +415,8 @@ export const downloadFile = async (videoUrl: string, opt: downLoadFileOptions): 
       const downloadedSizeMB = (downloadedBytes / 1048576).toFixed(1)
       const totalSizeMB = (totalBytes / 1048576).toFixed(1)
 
-      // 打印下载进度、速度和剩余时间
-      console.log(
+      // 打印下载进度、速度和剩余时间（行尾回到行首，终端里原地刷新同一行）
+      logger.mark(
         `⬇️  ${opt.title ?? (opt.filepath && opt.filepath.split('/').pop()) ?? '未知文件'} ${generateProgressBar(progressPercentage)} ${coloredPercentage} ${downloadedSizeMB}/${totalSizeMB} MB | ${formattedSpeed} 剩余: ${formattedRemainingTime}\r`
       )
     })

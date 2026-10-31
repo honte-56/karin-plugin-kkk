@@ -13,12 +13,12 @@ import {
 import { wrapWithErrorHandler } from '@/module/utils/ErrorHandler'
 import { Bilibili, getBilibiliID } from '@/platform/bilibili'
 import { DouYin, getDouyinID } from '@/platform/douyin'
+import { parseDouyinPlayUrl } from '@/platform/douyin/playUrl'
 import { fetchKuaishouData, getKuaishouID, Kuaishou } from '@/platform/kuaishou'
 import { getXiaohongshuID, Xiaohongshu } from '@/platform/xiaohongshu'
 
 const reg = {
   douyin: /(https?:\/\/)?(www|v|jx|m|jingxuan)\.(douyin|iesdouyin)\.com/i,
-  douyinCDN: /https:\/\/aweme\.snssdk\.com\/aweme\/v1\/play/i, // 抖音 CDN 下载链接
   bilibili: /(bilibili\.com|b23\.tv|t\.bilibili\.com|bili2233\.cn|\bBV[1-9a-zA-Z]{10}\b|\bav\d+\b)/i,
   kuaishou: /(快手.*快手|v\.kuaishou\.com|kuaishou\.com)/,
   xiaohongshu: /(xiaohongshu\.com|xhslink\.(?:com|cn))/
@@ -212,15 +212,16 @@ const handlePrefix = wrapWithErrorHandler(
     }
 
     // 检查是否是抖音 CDN 下载链接（推送配置中渲染的二维码）
-    if (reg.douyinCDN.test(e.msg)) {
+    const cdnPlayUrl = parseDouyinPlayUrl(e.msg)
+    if (cdnPlayUrl) {
       // 这是一个 CDN 下载链接，需要直接下载而不是解析
       logger.debug('检测到抖音 CDN 下载链接，直接下载视频')
-      const videoIdMatch = e.msg.match(/video_id=([^&]+)/)
+      const videoIdMatch = cdnPlayUrl.match(/video_id=([^&]+)/)
       const videoId = videoIdMatch ? videoIdMatch[1] : Date.now().toString()
 
       const parsed = await runGuardedParse(e, createContentIdentity('douyin', { video_id: videoId }), async () => {
         await downloadVideo(e, {
-          video_url: e.msg,
+          video_url: cdnPlayUrl,
           title: {
             timestampTitle: `tmp_${Date.now()}.mp4`,
             originTitle: `抖音视频_${videoId}.mp4`

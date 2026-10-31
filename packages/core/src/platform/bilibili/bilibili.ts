@@ -2,15 +2,14 @@ import fs from 'node:fs'
 
 import {
   AmagiSuccess,
-  ArticleContent,
-  BiliBangumiVideoInfo,
-  BiliBangumiVideoPlayurlIsLogin,
-  BiliBangumiVideoPlayurlNoLogin,
+  BilibiliArticleContentResponse,
+  BilibiliBangumiInfoResponse,
+  BilibiliBangumiStreamResponse,
   bilibiliApiUrls,
   BiliBiliVideoPlayurlNoLogin,
-  BiliDynamicInfoUnion,
-  BiliOneWork,
-  BiliVideoPlayurlIsLogin,
+  BilibiliDynamicDetailResponse,
+  BilibiliVideoInfoResponse,
+  BilibiliVideoStreamResponse,
   DynamicType,
   DynamicTypeDraw
 } from '@ikenxuan/amagi'
@@ -18,7 +17,8 @@ import type { BilibiliForwardOriginalContentProps } from '@template/template/bil
 import { DecorationCardData } from '@template/template/bilibili/dynamic/types'
 import { format, formatDistanceToNow, fromUnixTime } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
-import karin, { common, ElementTypes, logger, Message, segment, SendMessage } from 'node-karin'
+import karin, { common, ElementTypes, Message, segment, SendMessage } from 'node-karin'
+import axios from 'node-karin/axios'
 
 import {
   Base,
@@ -28,7 +28,6 @@ import {
   Count,
   downloadFile,
   downloadVideo,
-  extractTotalBytesFromHeaders,
   fileInfo,
   fixM4sFile,
   loopVideoWithTransition,
@@ -41,6 +40,7 @@ import {
 } from '@/module/utils'
 import { bilibiliFetcher, isSoftFailure, SOFT_ERROR_CODES, softFetch } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
+import { logger } from '@/module/utils/logger'
 import { bilibiliComments, BilibiliId, checkCk, genParams } from '@/platform/bilibili'
 import { type BiliDanmakuElem, burnBiliDanmaku, getHotDanmaku, mergeAndBurnBili } from '@/platform/bilibili/danmaku'
 import {
@@ -53,8 +53,19 @@ import {
 } from '@/platform/bilibili/dynamic-text'
 import { BilibiliDataTypes } from '@/types'
 
+import { createBilibiliCdnTools, streamUrls, type BilibiliStream } from './cdn'
+
 let img: ElementTypes[]
-type videoDownloadUrlList = BiliVideoPlayurlIsLogin['data']['dash']['video']
+type videoDownloadUrlList = BilibiliVideoStreamResponse['data']['dash']['video']
+
+export const getBilibiliStreamUrl = (stream: BilibiliStream): string | undefined => streamUrls(stream)[0]
+
+export const bilibiliCdn = createBilibiliCdnTools({
+  request: (config) => axios.request(config),
+  downloadFile,
+  resolvePath: (options) => options.filepath ?? Common.tempDri.video + options.title,
+  logger
+})
 
 /** 评论请求统一使用匿名态，避免账号 Cookie 改变评论热度池结果。 */
 const bilibiliAnonymousRequestConfig = {
@@ -73,6 +84,7 @@ export class Bilibili extends Base {
   downloadfilename: string
   /** 强制烧录弹幕（用于 #弹幕解析 命令） */
   forceBurnDanmaku: boolean
+  /** 本次解析的内容形态，供统计埋点读取 */
   get botadapter(): string {
     return this.e.bot?.adapter?.name
   }
@@ -82,6 +94,7 @@ export class Bilibili extends Base {
     this.e = e
     this.isVIP = false
     this.Type = data?.type
+
     this.islogin = data?.USER?.STATUS === 'isLogin'
     this.downloadfilename = ''
     this.forceBurnDanmaku = options?.forceBurnDanmaku ?? false
@@ -96,15 +109,19 @@ export class Bilibili extends Base {
     switch (this.Type) {
       case 'one_video': {
         const infoData = await this.amagi.bilibili.fetcher.fetchVideoInfo({ bvid: iddata.bvid })
-        const playUrlData = (await this.amagi.bilibili.fetcher.fetchVideoStreamUrl({
+        const playUrlData = await this.amagi.bilibili.fetcher.fetchVideoStreamUrl({
           avid: infoData.data.data.aid,
           cid: iddata.p ? (infoData.data.data.pages[iddata.p - 1]?.cid ?? infoData.data.data.cid) : infoData.data.data.cid
-        })) as AmagiSuccess<BiliVideoPlayurlIsLogin>
+        })
         // const playUrl = bilibiliApiUrls.视频流信息({ avid: infoData.data.aid, cid: infoData.data.cid })
         this.islogin = (await checkCk()).Status === 'isLogin'
 
         this.downloadfilename = infoData.data.data.title.substring(0, 50).replace(/[\\/:*?"<>|\r\n\s]/g, ' ')
 
+        /**
+         * 免登录 360P 那条不走 amagi（URL 上多一个 `platform=html5`），拿到的也不是登录态那种
+         * `dash` 形状，所以这里仍用手写快照树的 `BiliBiliVideoPlayurlNoLogin` —— 它不是任何端点的响应。
+         */
         const nockData = (await new Networks({
           url:
             bilibiliApiUrls.getVideoStream({
@@ -191,6 +208,8 @@ export class Bilibili extends Base {
           })
           /** 替换原始的视频信息对象 */
           playUrlData.data.data.dash.video = simplify
+          /** 没有音频流（如纯视频稿件）时拿不到音频地址，按只统计视频流大小处理 */
+          const audioUrl = playUrlData.data.data.dash.audio?.[0]
           /** 给视频信息对象删除不符合条件的视频流 */
           correctList = await bilibiliProcessVideos(
             {
@@ -199,16 +218,12 @@ export class Bilibili extends Base {
               qn: Config.bilibili.videoQuality
             },
             simplify,
-            playUrlData.data.data.dash.audio[0].base_url
+            audioUrl
           )
           playUrlData.data.data.dash.video = correctList.videoList
           playUrlData.data.data.accept_description = correctList.accept_description
           /** 获取第一个视频流的大小 */
-          videoSize = await getvideosize(
-            correctList.videoList[0].base_url,
-            playUrlData.data.data.dash.audio[0].base_url,
-            infoData.data.data.bvid
-          )
+          videoSize = await getvideosize(correctList.videoList[0], audioUrl, infoData.data.data.bvid)
         } else {
           videoSize = (nockData.data.durl[0].size / (1024 * 1024)).toFixed(2)
         }
@@ -270,7 +285,8 @@ export class Bilibili extends Base {
                 Resolution:
                   Config.bilibili.videoQuality !== 0 && Config.bilibili.videoQuality < 64
                     ? null
-                    : `${playUrlData.data.data.dash.video[0].width} x ${playUrlData.data.data.dash.video[0].height}`
+                    : `${playUrlData.data.data.dash.video[0].width} x ${playUrlData.data.data.dash.video[0].height}`,
+                AuthorAvatar: infoData.data.data.owner.face
               })
               this.e.reply(img)
             }
@@ -394,7 +410,7 @@ export class Bilibili extends Base {
               qn: Config.bilibili.videoQuality
             },
             simplify,
-            playUrlData.result.dash.audio[0].base_url
+            playUrlData.result.dash.audio?.[0]
           )
           playUrlData.result.dash.video = correctList.videoList
           playUrlData.result.cept_description = correctList.accept_description
@@ -409,11 +425,20 @@ export class Bilibili extends Base {
         const dynamicInfo = await this.amagi.bilibili.fetcher.fetchDynamicDetail({
           dynamic_id: iddata.dynamic_id
         })
+        /**
+         * 动态类型取成枚举再用。
+         *
+         * 生成树的判别联合目前只录到 AV / DRAW / FORWARD 三种形状，其余（WORD / LIVE_RCMD /
+         * ARTICLE）落在兜底支上，判别字段声明成 `?: never` —— 拿 `item.type` 直接 switch 时，
+         * 枚举里那些没录到的取值会被判成「与判别字段无重叠」，连带把已知支一起收窄成 never。
+         * 转成枚举后各支照旧按运行时的 `type` 字符串走，字段读取仍走每层的索引签名。
+         */
+        const dynamicType = String(dynamicInfo.data.data.item.type) as DynamicType
         const userProfileData = await this.amagi.bilibili.fetcher.fetchUserCard({
           host_mid: dynamicInfo.data.data.item.modules.module_author.mid
         })
 
-        switch (dynamicInfo.data.data.item.type) {
+        switch (dynamicType) {
           /** 图文、纯图 */
           case DynamicType.DRAW: {
             const imgArray = []
@@ -556,8 +581,10 @@ export class Bilibili extends Base {
             }
             this.e.reply(
               await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_DRAW', {
+                // 生成类型在判别联合里把 `pics` 记成 `any`（各支索引签名），`Object.values` 于是推出
+                // `unknown[]` —— 谓词里先把元素当成「可能有 url 的对象」再判，形状仍然照旧收窄
                 image_url: Object.values(dynamicInfo.data.data.item.modules.module_dynamic.major.opus.pics)
-                  .filter((item): item is { url: string } => typeof item?.url === 'string')
+                  .filter((item): item is { url: string } => typeof (item as { url?: unknown })?.url === 'string')
                   .map((item) => ({ image_src: item.url })),
                 // TIP: 2025/08/20, 动态卡片数据中，图文动态的描述文本在 major.opus.summary 中
                 title: dynamicInfo.data.data.item.modules.module_dynamic.major.opus.title ?? undefined,
@@ -697,8 +724,9 @@ export class Bilibili extends Base {
                       dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.summary.text,
                       dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.summary.rich_text_nodes
                     ),
+                    // 同上：生成类型的 `pics` 是 `any`，`Object.values` 出 `unknown[]`
                     image_url: Object.values(dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.pics)
-                      .filter((item): item is { url: string } => typeof item?.url === 'string')
+                      .filter((item): item is { url: string } => typeof (item as { url?: unknown })?.url === 'string')
                       .map((item) => ({ image_src: item.url })),
                     decoration_card: generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
                     frame: dynamicInfo.data.data.item.orig.modules.module_author.pendant.image
@@ -895,8 +923,12 @@ export class Bilibili extends Base {
 
             // 提取专栏基本信息
             const articleData = articleInfoBase.data.data
-            // 提取专栏正文内容
+            // 提取专栏正文内容（生成类型里 `data` 可空：样本里就有一条只有 code/message 的响应）
             const articleContent = articleInfo.data.data
+            if (!articleContent) {
+              this.e.reply('获取专栏正文失败，该专栏可能已被删除或设为私密')
+              break
+            }
 
             // TODO: 还未完全支持B站的富文本格式，后续需要根据实际情况补充更多类型的节点解析
             // 构建富文本文档
@@ -970,16 +1002,13 @@ export class Bilibili extends Base {
         }
 
         // 统一处理评论（直播动态除外）
-        if (
-          Config.bilibili.sendContent.some((content) => content === 'comment') &&
-          dynamicInfo.data.data.item.type !== DynamicType.LIVE_RCMD
-        ) {
+        if (Config.bilibili.sendContent.some((content) => content === 'comment') && dynamicType !== DynamicType.LIVE_RCMD) {
           const commentsData = await softFetch(
             () =>
               this.amagi.bilibili.fetcher.fetchComments(
                 {
-                  type: mapping_table(dynamicInfo.data.data.item.type),
-                  oid: oid(dynamicInfo.data.data.item.type, dynamicInfo.data),
+                  type: mapping_table(dynamicType),
+                  oid: oid(dynamicType, dynamicInfo.data),
                   number: Config.bilibili.numcomment
                 },
                 bilibiliAnonymousRequestConfig
@@ -1000,9 +1029,9 @@ export class Bilibili extends Base {
                 const messageElements = []
                 // 获取动态标题用于图片命名
                 let title = 'bilibili_dynamic'
-                if (dynamicInfo.data.data.item.type === DynamicType.DRAW) {
+                if (dynamicType === DynamicType.DRAW) {
                   title = dynamicInfo.data.data.item.modules.module_dynamic.major.opus.title || 'bilibili_dynamic'
-                } else if (dynamicInfo.data.data.item.type === DynamicType.AV) {
+                } else if (dynamicType === DynamicType.AV) {
                   title = dynamicInfo.data.data.item.modules.module_dynamic.major.archive.title || 'bilibili_dynamic'
                 }
 
@@ -1029,12 +1058,13 @@ export class Bilibili extends Base {
                 CommentsData: commentsdata,
                 CommentLength: String(commentsdata.length),
                 share_url:
-                  dynamicInfo.data.data.item.type === DynamicType.AV
+                  dynamicType === DynamicType.AV
                     ? `https://www.bilibili.com/video/${dynamicInfo.data.data.item.modules.module_dynamic.major.archive.bvid}`
                     : `https://t.bilibili.com/${dynamicInfo.data.data.item.id_str}`,
                 ImageLength: dynamicInfo.data.data.item.modules?.module_dynamic?.major?.draw?.items?.length ?? 0,
                 shareurl: '动态分享链接',
-                Resolution: null
+                Resolution: null,
+                AuthorAvatar: dynamicInfo.data.data.item.modules.module_author.face
               })
               this.e.reply(img)
             } else {
@@ -1112,18 +1142,15 @@ export class Bilibili extends Base {
     playUrlData,
     danmakuList = []
   }: {
-    infoData?: BiliBangumiVideoInfo | BiliOneWork
-    playUrlData: BiliVideoPlayurlIsLogin | BiliBiliVideoPlayurlNoLogin | BiliBangumiVideoPlayurlIsLogin | BiliBangumiVideoPlayurlNoLogin
+    infoData?: BilibiliBangumiInfoResponse | BilibiliVideoInfoResponse
+    playUrlData: BilibiliVideoStreamResponse | BiliBiliVideoPlayurlNoLogin | BilibiliBangumiStreamResponse
     danmakuList?: BiliDanmakuElem[]
   }) {
     /** 获取视频 => FFmpeg合成 */
     logger.debug('是否登录:', this.islogin)
     switch (this.islogin) {
       case true: {
-        logger.debug(
-          '视频 URL:',
-          this.Type === 'one_video' ? playUrlData.data?.dash?.video[0].base_url : playUrlData.result.dash.video[0].base_url
-        )
+        logger.debug('视频 URL:', this.Type === 'one_video' ? playUrlData.data?.dash?.video[0] : playUrlData.result.dash.video[0])
 
         // B站 CDN 需要正确的 Referer
         const downloadHeaders = {
@@ -1131,13 +1158,11 @@ export class Bilibili extends Base {
           Referer: 'https://www.bilibili.com'
         }
 
-        const bmp4Raw = await downloadFile(
-          this.Type === 'one_video' ? playUrlData.data?.dash?.video[0].base_url : playUrlData.result.dash.video[0].base_url,
-          {
-            title: `Bil_V_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.m4s`,
-            headers: downloadHeaders
-          }
-        )
+        const videoUrl = this.Type === 'one_video' ? playUrlData.data?.dash?.video[0] : playUrlData.result.dash.video[0]
+        const bmp4Raw = await bilibiliCdn.download(videoUrl, {
+          title: `Bil_V_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.m4s`,
+          headers: downloadHeaders
+        })
 
         // 修复 m4s 文件为标准 MP4
         const videoPath =
@@ -1151,41 +1176,57 @@ export class Bilibili extends Base {
         // 删除原始 m4s 文件
         await Common.removeFile(bmp4Raw.filepath, true)
 
-        logger.debug(
-          '音频 URL:',
-          this.Type === 'one_video' ? playUrlData.data?.dash?.audio[0].base_url : playUrlData.result.dash.audio[0].base_url
-        )
-        const bmp3Raw = await downloadFile(
-          this.Type === 'one_video' ? playUrlData.data?.dash?.audio[0].base_url : playUrlData.result.dash.audio[0].base_url,
-          {
+        const audioUrl = this.Type === 'one_video' ? playUrlData.data?.dash?.audio?.[0] : playUrlData.result.dash.audio?.[0]
+        logger.debug('音频 URL:', audioUrl)
+
+        /** 没有音频流（如纯视频稿件）时为 undefined，此时无从合成，直接发视频流 */
+        let bmp3: { filepath: string; totalBytes: number } | undefined
+        if (audioUrl) {
+          const bmp3Raw = await bilibiliCdn.download(audioUrl, {
             title: `Bil_A_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.m4s`,
             headers: downloadHeaders
-          }
-        )
+          })
 
-        // 修复音频 m4s 文件为 m4a（AAC 音频不能直接转为 MP3 容器）
-        const audioPath =
-          Common.tempDri.video +
-          `Bil_A_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.m4a`
-        const audioFixed = await fixM4sFile(bmp3Raw.filepath, audioPath)
-        if (!audioFixed) {
-          logger.error('音频文件修复失败')
-          return false
+          // 修复音频 m4s 文件为 m4a（AAC 音频不能直接转为 MP3 容器）
+          const audioPath =
+            Common.tempDri.video +
+            `Bil_A_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.m4a`
+          const audioFixed = await fixM4sFile(bmp3Raw.filepath, audioPath)
+          if (!audioFixed) {
+            logger.error('音频文件修复失败')
+            return false
+          }
+          // 删除原始 m4s 文件
+          await Common.removeFile(bmp3Raw.filepath, true)
+          bmp3 = { filepath: audioPath, totalBytes: bmp3Raw.totalBytes }
         }
-        // 删除原始 m4s 文件
-        await Common.removeFile(bmp3Raw.filepath, true)
 
         const bmp4 = { filepath: videoPath, totalBytes: bmp4Raw.totalBytes }
-        const bmp3 = { filepath: audioPath, totalBytes: bmp3Raw.totalBytes }
 
-        if (bmp4.filepath && bmp3.filepath) {
+        if (bmp4.filepath) {
           // 根据是否有弹幕数据选择合成方式
           const hasDanmaku = (this.forceBurnDanmaku || Config.bilibili.burnDanmaku) && danmakuList.length > 0
           const resultPath =
             Common.tempDri.video +
             `Bil_Result_${this.Type === 'one_video' ? infoData && infoData.data.bvid : infoData && infoData.result.season_id}.mp4`
           let success: boolean
-          if (hasDanmaku) {
+          /** 最终要上传的文件：合成/烧录的产物，或没有音频流时直接用的视频流 */
+          let sourcePath = bmp4.filepath
+          if (!bmp3) {
+            if (hasDanmaku) {
+              logger.debug(`开始烧录 ${danmakuList.length} 条弹幕...`)
+              success = await burnBiliDanmaku(bmp4.filepath, danmakuList, resultPath, {
+                danmakuArea: Config.bilibili.danmakuArea,
+                verticalMode: Config.bilibili.verticalMode,
+                videoCodec: Config.bilibili.videoCodec,
+                danmakuFontSize: Config.bilibili.danmakuFontSize,
+                danmakuOpacity: Config.bilibili.danmakuOpacity
+              })
+              sourcePath = resultPath
+            } else {
+              success = true
+            }
+          } else if (hasDanmaku) {
             logger.debug(`开始合成视频并烧录 ${danmakuList.length} 条弹幕...`)
             success = await mergeAndBurnBili(bmp4.filepath, bmp3.filepath, danmakuList, resultPath, {
               danmakuArea: Config.bilibili.danmakuArea,
@@ -1194,17 +1235,19 @@ export class Bilibili extends Base {
               danmakuFontSize: Config.bilibili.danmakuFontSize,
               danmakuOpacity: Config.bilibili.danmakuOpacity
             })
+            sourcePath = resultPath
           } else {
             success = await mergeVideoAudio(bmp4.filepath, bmp3.filepath, resultPath)
+            sourcePath = resultPath
           }
 
           if (success) {
             const filePath = Common.tempDri.video + `${Config.app.removeCache ? 'tmp_' + Date.now() : this.downloadfilename}.mp4`
-            fs.renameSync(resultPath, filePath)
-            logger.mark(`视频文件重命名完成: ${resultPath.split('/').pop()} -> ${filePath.split('/').pop()}`)
+            fs.renameSync(sourcePath, filePath)
+            logger.mark(`视频文件重命名完成: ${sourcePath.split('/').pop()} -> ${filePath.split('/').pop()}`)
             logger.mark('正在尝试删除缓存文件')
-            await Common.removeFile(bmp4.filepath, true)
-            await Common.removeFile(bmp3.filepath, true)
+            if (fs.existsSync(bmp4.filepath)) await Common.removeFile(bmp4.filepath, true)
+            if (bmp3 && fs.existsSync(bmp3.filepath)) await Common.removeFile(bmp3.filepath, true)
 
             const stats = fs.statSync(filePath)
             const fileSizeInMB = Number((stats.size / (1024 * 1024)).toFixed(2))
@@ -1219,7 +1262,7 @@ export class Bilibili extends Base {
             }
           } else {
             await Common.removeFile(bmp4.filepath, true)
-            await Common.removeFile(bmp3.filepath, true)
+            if (bmp3) await Common.removeFile(bmp3.filepath, true)
           }
         }
         break
@@ -1482,7 +1525,7 @@ export const parseAdditionalCard = (additional: any) => {
   }
 }
 
-const mapping_table = (type: any): number => {
+const mapping_table = (type: any): 1 | 11 | 12 | 17 | 19 => {
   const Array: Record<string, string[]> = {
     1: ['DYNAMIC_TYPE_AV', 'DYNAMIC_TYPE_PGC', 'DYNAMIC_TYPE_UGC_SEASON'],
     11: ['DYNAMIC_TYPE_DRAW'],
@@ -1492,7 +1535,7 @@ const mapping_table = (type: any): number => {
   }
   for (const key in Array) {
     if (Array[key].includes(type)) {
-      return parseInt(key, 10)
+      return Number(key) as 1 | 11 | 12 | 17 | 19
     }
   }
   return 1
@@ -1504,7 +1547,7 @@ const mapping_table = (type: any): number => {
  * @param dynamicData 动态数据
  * @returns
  */
-const oid = (dynamicType: DynamicType, dynamicData: BiliDynamicInfoUnion) => {
+const oid = (dynamicType: DynamicType, dynamicData: BilibiliDynamicDetailResponse) => {
   switch (dynamicType) {
     case DynamicType.WORD:
     case DynamicType.FORWARD: {
@@ -1537,7 +1580,7 @@ type qualityOptions = {
  * @param bvid 视频bvid（BV号）
  * @returns
  */
-export const bilibiliProcessVideos = async (qualityOptions: qualityOptions, videoList: videoDownloadUrlList, audioUrl: string) => {
+export const bilibiliProcessVideos = async (qualityOptions: qualityOptions, videoList: videoDownloadUrlList, audioUrl: BilibiliStream) => {
   // 如果不是自动选择模式，直接根据配置的清晰度选择视频
   if (qualityOptions.qn !== 0 || Config.bilibili.videoQuality !== 0) {
     const targetQuality = qualityOptions.qn ?? Config.bilibili.videoQuality
@@ -1581,7 +1624,7 @@ export const bilibiliProcessVideos = async (qualityOptions: qualityOptions, vide
   const results: Record<string, string> = {}
 
   for (const video of videoList) {
-    const size = await getvideosize(video.base_url, audioUrl, qualityOptions.bvid)
+    const size = await getvideosize(video, audioUrl, qualityOptions.bvid)
     results[video.id] = size
   }
 
@@ -1627,41 +1670,15 @@ export const bilibiliProcessVideos = async (qualityOptions: qualityOptions, vide
 /**
  * [bilibili] 获取视频和音频的总大小
  * @param videourl - 视频流URL
- * @param audiourl - 音频流URL
+ * @param audiourl - 音频流URL，没有音频流（如纯视频稿件）时传 undefined，此时只统计视频流大小
  * @param bvid - 视频BV号
  * @returns  返回视频和音频总大小(MB),保留2位小数
  */
-export const getvideosize = async (videourl: string, audiourl: string, bvid: string) => {
-  try {
-    const videoheaders = await new Networks({
-      url: videourl,
-      headers: {
-        ...baseHeaders,
-        Referer: `https://www.bilibili.com/video/${bvid}`,
-        Cookie: Config.amagi.cookies.bilibili
-      }
-    }).getHeaders()
-    const audioheaders = await new Networks({
-      url: audiourl,
-      headers: {
-        ...baseHeaders,
-        Referer: `https://www.bilibili.com/video/${bvid}`,
-        Cookie: Config.amagi.cookies.bilibili
-      }
-    }).getHeaders()
-
-    const videoSize = extractTotalBytesFromHeaders(videoheaders)
-    const audioSize = extractTotalBytesFromHeaders(audioheaders)
-
-    const videoSizeInMB = (videoSize / (1024 * 1024)).toFixed(2)
-    const audioSizeInMB = (audioSize / (1024 * 1024)).toFixed(2)
-
-    const totalSizeInMB = parseFloat(videoSizeInMB) + parseFloat(audioSizeInMB)
-    return totalSizeInMB.toFixed(2)
-  } catch (error) {
-    logger.warn(`[karin-plugin-kkk] 获取视频大小失败: ${error instanceof Error ? error.message : String(error)}`)
-    return '0.00'
-  }
+export const getvideosize = async (video: BilibiliStream, audio: BilibiliStream, bvid: string) => {
+  const headers = { ...baseHeaders, Referer: `https://www.bilibili.com/video/${bvid}`, Cookie: Config.amagi.cookies.bilibili }
+  const videoSize = await bilibiliCdn.size(video, headers)
+  const audioSize = audio ? await bilibiliCdn.size(audio, headers) : 0
+  return ((videoSize + audioSize) / (1024 * 1024)).toFixed(2)
 }
 
 /**
@@ -1746,7 +1763,7 @@ const getStringDisplayWidth = (str: string): number => {
  * @param content
  * @returns
  */
-export const extractArticleImages = (content: ArticleContent['data']): string[] => {
+export const extractArticleImages = (content: NonNullable<BilibiliArticleContentResponse['data']>): string[] => {
   const images: string[] = []
 
   // 处理 opus 格式（结构化数据）

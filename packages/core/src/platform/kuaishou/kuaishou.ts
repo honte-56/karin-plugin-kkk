@@ -1,9 +1,9 @@
-import type { KsOneWork } from '@ikenxuan/amagi'
+import type { KuaishouVideoWorkResponse } from '@ikenxuan/amagi'
 import { type Message } from 'node-karin'
 
 import { Base, downloadVideo, extractTotalBytesFromHeaders, Networks, Render } from '@/module'
 import { Config } from '@/module/utils/Config'
-import { kuaishouComments, type KuaishouOneWorkPayload } from '@/platform/kuaishou'
+import { kuaishouComments, type KuaishouDataResult, type KuaishouOneWorkPayload } from '@/platform/kuaishou'
 import type { ExtendedKuaishouOptionsType, KuaishouDataTypes } from '@/types'
 
 /**
@@ -19,7 +19,7 @@ import type { ExtendedKuaishouOptionsType, KuaishouDataTypes } from '@/types'
  * @param work - `fetchVideoWork` 的响应体
  * @returns 视频直链；取不到时为空串
  */
-const pickVideoUrl = (work: KsOneWork): string => {
+const pickVideoUrl = (work: KuaishouVideoWorkResponse): string => {
   const representations = work.photo?.manifest?.adaptationSet?.flatMap((set) => set.representation ?? []) ?? []
   const preferred = representations.find((item) => item.defaultSelect) ?? representations[0]
   return preferred?.url ?? work.photo?.mainMvUrls?.[0]?.url ?? ''
@@ -28,18 +28,17 @@ const pickVideoUrl = (work: KsOneWork): string => {
 export class Kuaishou extends Base {
   e: Message
   type: KuaishouDataTypes[keyof KuaishouDataTypes]
-  is_mp4: any
   constructor(e: Message, iddata: ExtendedKuaishouOptionsType) {
     super(e)
     this.e = e
     this.type = iddata?.type
   }
 
-  async KuaishouHandler(data: any) {
-    // 入参保持 any（调用方给的是 fetchKuaishouData 的联合类型），这里先收窄到
-    // one_work 那一支：H5 换形状后所有取值都得靠 tsc 检查，不能再裸读 any
+  async KuaishouHandler(data: KuaishouDataResult) {
+    // 入参是 fetchKuaishouData 的联合返回，本插件只解析视频，先收窄到 one_work 那一支：
+    // H5 换形状后所有取值都得靠 tsc 检查，不能再裸读 any
     const payload = data as KuaishouOneWorkPayload
-    const work = payload.VideoData.data
+    const work = payload.VideoData
 
     // H5 这条响应没有 `data.visionVideoDetail.status`（那是 PC GraphQL 的字段），
     // 顶层 `result` 才是接口状态位（1 = 成功）；再加一道「拿不到视频直链」，
@@ -49,14 +48,15 @@ export class Kuaishou extends Base {
       await this.e.reply('不支持解析的视频')
       return true
     }
+
     if (Config.app.parseTip) {
       this.e.reply('检测到快手链接，开始解析')
     }
     // 表情接口没换，还是 graphql 那条，`data.visionBaseEmoticons` 两层照旧
-    const transformedData = Object.entries(payload.EmojiData.data.data.visionBaseEmoticons.iconUrls).map(([name, path]) => {
+    const transformedData = Object.entries(payload.EmojiData.data.visionBaseEmoticons.iconUrls).map(([name, path]) => {
       return { name, url: `https:${path}` }
     })
-    const CommentsData = await kuaishouComments(payload.CommentsData.data, transformedData)
+    const CommentsData = await kuaishouComments(payload.CommentsData, transformedData)
     const fileHeaders = await new Networks({ url: video_url, headers: this.headers }).getHeaders()
     const fileSizeContent = extractTotalBytesFromHeaders(fileHeaders)
     const fileSizeInMB = (fileSizeContent / (1024 * 1024)).toFixed(2)
@@ -68,7 +68,8 @@ export class Kuaishou extends Base {
       CommentLength: CommentsData?.length ?? 0,
       share_url: video_url,
       VideoSize: fileSizeInMB,
-      likeCount: work.photo.likeCount
+      likeCount: work.photo.likeCount,
+      AuthorAvatar: work.photo.headUrl
     })
     await this.e.reply(img)
     await downloadVideo(this.e, {

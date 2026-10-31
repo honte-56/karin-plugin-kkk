@@ -1,9 +1,10 @@
-import karin, { logger } from 'node-karin'
+import karin from 'node-karin'
 
 import { bilibiliDB, douyinDB } from '@/module/db'
 import { bilibiliFetcher, douyinFetcher } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
 import { wrapWithErrorHandler } from '@/module/utils/ErrorHandler'
+import { logger } from '@/module/utils/logger'
 import { Bilibilipush, DouYinpush, getBilibiliID, getDouyinID } from '@/platform'
 
 // 包装抖音推送任务
@@ -60,9 +61,8 @@ const handleSetDouyinPush = wrapWithErrorHandler(
     }
 
     // 原有的订阅逻辑
-    const data = await douyinFetcher.searchContent({
-      query,
-      type: 'user'
+    const data = await douyinFetcher.fetchGuestUserInfo({
+      unique_id: query
     })
     await new DouYinpush(e).setting(data.data)
     return true
@@ -124,57 +124,6 @@ const handleDouyinPushList = wrapWithErrorHandler(
   },
   {
     businessName: '抖音推送列表'
-  }
-)
-
-// 包装设置机器人ID命令
-const handleChangeBotID = wrapWithErrorHandler(
-  async (e) => {
-    const newBotId = e.msg.replace(/^#kkk设置推送机器人/, '')
-
-    // 更新抖音配置和数据库
-    const newDouyinlist = Config.pushlist.douyin.map((item) => {
-      const modifiedGroupIds = item.group_id.map((groupId) => {
-        const [group_id, oldBotId] = groupId.split(':')
-        // 更新数据库中的botId
-        if (oldBotId && oldBotId !== newBotId) {
-          douyinDB.updateGroupBotId(group_id, oldBotId, newBotId).catch((err) => {
-            logger.error(`Failed to update douyin group ${group_id}:`, err)
-          })
-        }
-        return `${group_id}:${newBotId}`
-      })
-      return {
-        ...item,
-        group_id: modifiedGroupIds
-      }
-    })
-
-    // 更新B站配置和数据库
-    const newBilibililist = Config.pushlist.bilibili.map((item) => {
-      const modifiedGroupIds = item.group_id.map((groupId) => {
-        const [group_id, oldBotId] = groupId.split(':')
-        // 更新数据库中的botId
-        if (oldBotId && oldBotId !== newBotId) {
-          bilibiliDB.updateGroupBotId(group_id, oldBotId, newBotId).catch((err) => {
-            logger.error(`Failed to update bilibili group ${group_id}:`, err)
-          })
-        }
-        return `${group_id}:${newBotId}`
-      })
-      return {
-        ...item,
-        group_id: modifiedGroupIds
-      }
-    })
-
-    Config.Modify('pushlist', 'douyin', newDouyinlist)
-    Config.Modify('pushlist', 'bilibili', newBilibililist)
-    await e.reply('推送机器人已修改为' + newBotId)
-    return true
-  },
-  {
-    businessName: '设置推送机器人'
   }
 )
 
@@ -312,11 +261,6 @@ export const bilibiliPushList = karin.command(/^#?[bB]站推送列表$/, handleB
 export const douyinPushList = karin.command(/^#?抖音推送列表$/, handleDouyinPushList, {
   name: 'kkk-推送功能-列表',
   event: 'message.group'
-})
-
-export const changeBotID = karin.command(/^#kkk设置推送机器人/, handleChangeBotID, {
-  name: 'kkk-推送功能-设置',
-  perm: 'master'
 })
 
 export const globalIgnore = karin.command(/^#kkk推送全局忽略/, handleGlobalIgnore, {

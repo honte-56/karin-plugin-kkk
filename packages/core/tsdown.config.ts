@@ -22,8 +22,8 @@ export default defineConfig({
       moduleResolution: 'bundler',
       paths: {
         '@kkk/richtext': ['../richtext/src/index.ts'],
-        '@template/*': ['./template/*'],
-        '@ikenxuan/amagi': ['../../../amagi/packages/core/src/index.ts']
+        '@template/*': ['./ktr/*'],
+        '@ikenxuan/amagi': ['../amagi/packages/core/src/index.ts']
       }
     }
   }

@@ -7,7 +7,8 @@ import Client, {
   type SuccessKuaishouFetcher,
   type SuccessXiaohongshuFetcher
 } from '@ikenxuan/amagi'
-import { logger } from 'node-karin'
+
+import { logger } from '@/module/utils/logger'
 
 import { Config } from './Config'
 
@@ -21,15 +22,11 @@ type PlatformKey = 'bilibili' | 'douyin' | 'kuaishou' | 'xiaohongshu'
 type WithSuccessFetcher<M, F> = Omit<M, 'fetcher'> & { fetcher: F }
 
 /**
- * 包装后的 client：只有四个平台的 `fetcher` 换成「失败必抛」形态，其余键原样。
+ * 失败必抛的 client：四个平台的 `fetcher` 换成成功信封形态，其余键原样。
  *
- * v7 的 `AmagiResult<T>` 是判别联合，未收窄时 `data` 是 `T | undefined`。本模块的
- * Proxy 在运行时保证「失败一律抛」，于是**返回了就是成功** —— 这条语义必须同时
- * 写进类型，否则每一处 `.data` 都得在业务代码里收窄一遍（迁移时实测 473 处）。
- *
- * `Success*Fetcher` 由 amagi 提供而不是在这里用映射类型现推：fetcher 方法是
- * 泛型签名（`<TData = DataOf<D>>`），TS 对泛型签名做 `infer` 时按约束实例化类型
- * 参数，默认值直接丢失 —— 自己推会把每个 `data` 变成 `unknown`。
+ * 运行时由 {@link throwOnFailure} 保证「失败一律抛」，类型上必须同步声明成成功分支 —— 否则
+ * 未收窄的 `AmagiResult` 让每一处 `.data` 都带 `| undefined`。`Success*Fetcher` 只能用 amagi
+ * 提供的那份：fetcher 方法是泛型签名，自己 infer 会按约束实例化类型参数，默认值丢失，`data` 退化成 `unknown`。
  */
 type ThrowingClient = Omit<AmagiClient, PlatformKey> & {
   bilibili: WithSuccessFetcher<AmagiClient['bilibili'], SuccessBilibiliFetcher>
@@ -39,14 +36,9 @@ type ThrowingClient = Omit<AmagiClient, PlatformKey> & {
 }
 
 /**
- * 把 v7 的分层错误码压回一个数字，供按平台业务码分流的调用点使用。
- *
- * v7 不再用一个 `code` 混装三种码：平台业务码在 `error.platform.code`、
- * HTTP 状态在 `error.http.status`、amagi 自己的码在 `error.code`（字符串枚举）。
- * 这里只负责取「平台业务码」那一种 —— B站的 `-352`（风控）、`-111`（csrf 失效）、
- * `12061`（UP主关闭评论区）都是它。
- * @param error - v7 错误契约
- * @returns 平台业务码；平台没给就退到 HTTP 状态，再退到 0
+ * 平台业务码。v7 的三种码各归各位：平台业务码 `error.platform.code`、HTTP 状态 `error.http.status`、
+ * amagi 自己的码 `error.code`（字符串）。按平台码分流的地方（B站 `-352` 风控、`-111` csrf 失效、
+ * `12061` 关闭评论区）要的是第一种；平台没给就退 HTTP 状态，再退 0。
  */
 const legacyCode = (error: AmagiErrorContract): number => {
   const platformCode = error.platform?.code
@@ -58,17 +50,8 @@ const legacyCode = (error: AmagiErrorContract): number => {
 }
 
 /**
- * 一行说清一次失败：错误大类 / 错误码 + 平台原文 + 请求归因。
- *
- * 原先 `AmagiError.message` 塞的是整个失败信封的 `util.inspect` 彩色转储
- * （实测 1.6 KB 起），理由是「错误图把 message 当 stack 渲染，换成单行会丢上下文」。
- * 错误图现在把 kind / 分层错误码 / requestId / attempts 这些**单独成块**渲染了，
- * 转储于是只剩重复 —— 一条 118 行的 stack 里同一份数据出现四遍，而调用帧只占 7 行。
- *
- * 另一半理由是日志：`message` 会被 `logger.warn(...)` 直接拼进日志行
- * （`platform/bilibili/push.ts` 有三处），转储把整行日志顶成一屏 ANSI。
- * @param envelope - v7 失败信封
- * @returns 一行摘要
+ * 一行说清一次失败：`[大类/码] 平台原文 (端点 平台码 HTTP requestId attempts)`。
+ * `message` 会被 `logger.warn(...)` 直接拼进日志行，塞整个信封的转储会把日志顶成一屏 ANSI。
  */
 const describeFailure = (envelope: AmagiFailure): string => {
   const { error, meta } = envelope
@@ -83,22 +66,17 @@ const describeFailure = (envelope: AmagiFailure): string => {
   return `[${error.kind}/${error.code}] ${error.message}${facts.length > 0 ? ` (${facts.join(' ')})` : ''}`
 }
 
-/**
- * Amagi 错误类，携带 v7 的分层错误信息。
- *
- * `message` 是一行摘要（见 {@link describeFailure}）；结构化字段各有自己的属性，
- * 完整信封在 {@link envelope} 里，不需要靠转储传递。
- */
+/** Amagi 失败异常：`message` 是一行摘要，结构化字段各有属性，完整信封在 {@link AmagiError.envelope} */
 export class AmagiError extends Error {
   /** 平台业务码，见 {@link legacyCode} */
   code: number
-  /** 原始响应体。v7 只在 `debug: true` 下填 `error.raw`（B站风控要读里面的 `v_voucher`） */
+  /** 平台原始响应体。v7 只在 `debug: true` 下填 `error.raw`（B站风控要读里面的 `v_voucher`） */
   data: any
   /** v7 错误契约本体，等价于失败信封的 `error` */
   rawError: AmagiErrorContract
-  /** 跨平台统一的错误大类，12 个之一 */
+  /** 错误大类 */
   kind: AmagiErrorContract['kind']
-  /** amagi 自己的字符串错误码，22 个之一 */
+  /** amagi 自己的字符串错误码 */
   amagiCode: AmagiErrorContract['code']
   /** 平台返回的原文，不带前缀与归因 */
   reason: string
@@ -111,7 +89,7 @@ export class AmagiError extends Error {
   /** 整条失败信封，`meta.requestId` / `attempts` / `durationMs` 在里面 */
   envelope: AmagiFailure
 
-  constructor (envelope: AmagiFailure) {
+  constructor(envelope: AmagiFailure) {
     const error = envelope.error
     super(describeFailure(envelope))
     this.name = 'AmagiError'
@@ -129,13 +107,8 @@ export class AmagiError extends Error {
 }
 
 /**
- * 判断一个值是不是 v7 的失败信封。
- *
- * **只认 `success`。** v7 的信封顶层没有 `code`（三种码各归各位），拿 `code`
- * 当特征会让判别恒假 —— 表现是失败信封被原样透传、`try/catch` 全部失效、
- * 取数失败但流程继续，且零编译错误。
- * @param value - 任意值
- * @returns 是失败信封时为 `true`
+ * 判断一个值是不是失败信封。**只认 `success`**：v7 信封顶层没有 `code`（三种码各归各位），
+ * 拿 `code` 当特征判别恒假 —— 失败被原样透传、`try/catch` 全失效、取数失败但流程继续，且零编译错误。
  */
 const isFailureEnvelope = (value: unknown): value is AmagiFailure => {
   if (!value || typeof value !== 'object') return false
@@ -145,37 +118,74 @@ const isFailureEnvelope = (value: unknown): value is AmagiFailure => {
 
 /** 判断是不是 thenable，用来只包装异步方法 */
 const isThenable = (value: unknown): value is PromiseLike<unknown> =>
-  !!value &&
-  (typeof value === 'object' || typeof value === 'function') &&
-  typeof (value as PromiseLike<unknown>).then === 'function'
+  !!value && (typeof value === 'object' || typeof value === 'function') && typeof (value as PromiseLike<unknown>).then === 'function'
 
 /**
- * 递归代理一个 fetcher 对象，把失败信封转成 `throw AmagiError`。
+ * 把一次 fetcher 调用的结果收口：成功原样返回，失败信封先给 RiskVerify 一次「发码并轮询」的机会。
  *
- * 返回类型与入参同形 —— 「只保留成功分支」是**类型层**由 `ThrowingClient` 声明的，
- * 这里只管运行时行为。
- * @param target - fetcher 对象
- * @returns 同形状的代理，异步方法失败即抛
+ * `handleRiskChallenge` 对不带 `challenge.url` 的失败会立刻返回 false（是不是风控由它判定），
+ * 所以这里不用先判。过码成功后按它的契约**再重放一次**原调用，这次的返回值就是结果；
+ * 没放行（超时 / 没有消息上下文 / 达并发上限）则把原错误抛出去。
+ *
+ * RiskVerify 用**动态 import** 取，不能提成顶层静态 import：它的链上有
+ * `Render → @/module（barrel）→ ./utils → Base → amagiClient`，静态边会让「先加载 amagiClient」
+ * 的模块求值顺序撞上 `Base extends AmagiBase` 的 TDZ（dev 下必崩），本文件与 Base 之间就成环了。
+ * 挪到运行期后，这条边只在失败路径、模块图就绪之后才走。
+ * @param returned - 原调用的返回值（已排除同步方法）
+ * @param platform - 平台名，RiskVerify 用它做去重键与提示文案
+ * @param call - 原调用的重放：同一方法、同一参数、同一份 CK
  */
-const throwOnFailure = <T extends object>(target: T): T =>
+const settleFailure = async (returned: PromiseLike<unknown>, platform: PlatformKey, call: () => unknown): Promise<unknown> => {
+  const result = await returned
+  if (!isFailureEnvelope(result)) return result
+
+  const failure = new AmagiError(result)
+  const { handleRiskChallenge } = await import('@/module/utils/RiskVerify')
+  const solved = await handleRiskChallenge(failure, platform, () => probeReplay(call))
+  if (!solved) throw failure
+
+  const replayed = await call()
+  if (isFailureEnvelope(replayed)) throw new AmagiError(replayed)
+  return replayed
+}
+
+/**
+ * 给 RiskVerify 轮询用的重放探针。
+ *
+ * 判定权在它那边：true = 已放行；仍被同一类风控拦住返回 false（继续等）；
+ * 冒出其它失败就抛，RiskVerify 据此停止等待、把错误交回原调用方处理。
+ */
+const probeReplay = async (call: () => unknown): Promise<boolean> => {
+  const result = await call()
+  if (!isFailureEnvelope(result)) return true
+  if (result.error.challenge?.url) return false
+  throw new AmagiError(result)
+}
+
+/**
+ * 递归代理一个 fetcher 对象，把失败信封转成 `throw AmagiError`。返回类型与入参同形 ——
+ * 「只保留成功分支」是**类型层**由 {@link ThrowingClient} 声明的，这里只管运行时行为。
+ *
+ * 带风控挑战的失败不直接抛：先交给 `RiskVerify` 走完整条验证流程（发二维码给主人 → 轮询重放），
+ * 过码成功就重放拿正常结果，没成功再把原错误抛出去 —— 见 {@link settleFailure}。
+ */
+const throwOnFailure = <T extends object>(target: T, platform: PlatformKey): T =>
   new Proxy(target, {
-    get (obj: any, prop: string | symbol) {
+    get(obj: any, prop: string | symbol) {
       const value = obj[prop]
 
       if (typeof value === 'function') {
         return (...args: unknown[]) => {
-          const returned = value.apply(obj, args)
+          const call = () => value.apply(obj, args)
+          const returned = call()
           // 同步方法原样放行：包成 async 会把返回值套一层 Promise，破坏语义
           if (!isThenable(returned)) return returned
-          return returned.then((result: unknown) => {
-            if (isFailureEnvelope(result)) throw new AmagiError(result)
-            return result
-          })
+          return settleFailure(returned, platform, call)
         }
       }
 
       if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return throwOnFailure(value)
+        return throwOnFailure(value, platform)
       }
 
       return value
@@ -187,8 +197,8 @@ export class AmagiBase {
   /**
    * 原始 v7 客户端。
    *
-   * `events` / `on` / `once` / `login` / `startServer` 都从这里取 —— 它们不是
-   * fetcher，不该被「失败必抛」的 Proxy 碰（`on` 返回退订函数，包成 async 就废了）。
+   * `events` / `on` / `once` / `login` / `startServer` 从这里取 —— 它们不是 fetcher，
+   * 不该被「失败必抛」的代理碰（`on` 返回退订函数，包成 async 就废了）。
    */
   rawAmagi: AmagiClient
   /** 解析库实例，四个平台的 fetcher 失败即抛 */
@@ -196,7 +206,7 @@ export class AmagiBase {
   /** 当前客户端使用的配置快照，用于避免文件监听与显式重载造成重复初始化 */
   private configSignature: string
 
-  constructor () {
+  constructor() {
     const client = this.createAmagiClient()
     this.rawAmagi = client
     this.amagi = this.wrapAmagiClient(client)
@@ -226,7 +236,7 @@ export class AmagiBase {
    * 重载配置 - 重新创建 Amagi Client 实例
    * @returns 配置发生变化并完成重载时返回 true
    */
-  reloadConfig () {
+  reloadConfig() {
     const nextConfigSignature = this.getConfigSignature()
     if (nextConfigSignature === this.configSignature) {
       logger.debug('[AmagiClient] 配置未变化，跳过重复重载')
@@ -246,18 +256,14 @@ export class AmagiBase {
   protected wrapAmagiClient = (client: AmagiClient): ThrowingClient =>
     ({
       ...client,
-      bilibili: { ...client.bilibili, fetcher: throwOnFailure(client.bilibili.fetcher) },
-      douyin: { ...client.douyin, fetcher: throwOnFailure(client.douyin.fetcher) },
-      kuaishou: { ...client.kuaishou, fetcher: throwOnFailure(client.kuaishou.fetcher) },
-      xiaohongshu: { ...client.xiaohongshu, fetcher: throwOnFailure(client.xiaohongshu.fetcher) }
+      bilibili: { ...client.bilibili, fetcher: throwOnFailure(client.bilibili.fetcher, 'bilibili') },
+      douyin: { ...client.douyin, fetcher: throwOnFailure(client.douyin.fetcher, 'douyin') },
+      kuaishou: { ...client.kuaishou, fetcher: throwOnFailure(client.kuaishou.fetcher, 'kuaishou') },
+      xiaohongshu: { ...client.xiaohongshu, fetcher: throwOnFailure(client.xiaohongshu.fetcher, 'xiaohongshu') }
     }) as ThrowingClient
 }
 
-/**
- * 软错误码常量
- * Bilibili:
- *   12061 - UP主已关闭评论区
- */
+/** 软错误码：命中这些平台业务码时不抛异常，按失败信封返回。Bilibili `12061` - UP主已关闭评论区 */
 export const SOFT_ERROR_CODES = {
   BILIBILI_COMMENTS_DISABLED: 12061
 } as const
@@ -269,7 +275,7 @@ export type SoftFailure = AmagiFailure & { code: number }
 export type SoftResult<T> = AmagiSuccess<T> | SoftFailure
 
 /**
- * 调用 amagi fetcher 方法，允许特定平台业务码不抛异常而是以失败信封形式返回。
+ * 调用 amagi fetcher 方法，允许特定平台业务码以失败信封返回而不是抛异常。
  * @param fn - 经过代理包装的 amagi 方法调用
  * @param allowedCodes - 不应抛出异常的平台业务码列表
  * @returns 成功信封，或命中 `allowedCodes` 的软失败
@@ -286,13 +292,10 @@ export const softFetch = async <T>(fn: () => Promise<AmagiSuccess<T>>, allowedCo
 }
 
 /**
- * 判断 {@link softFetch} 的结果是否命中某个软错误码。
+ * {@link softFetch} 的结果是否命中某个软错误码。
  *
- * 是类型守卫而不是 `result.code === x` 直接比较：`code` 的类型是 `number`
- * 不是字面量，直接比较不会收窄联合，`else` 分支里的 `data` 仍是 `T | undefined`。
- * @param result - softFetch 的返回值
- * @param codes - 要匹配的平台业务码
- * @returns 命中时为 `true`；为 `false` 时 `result` 收窄成成功信封
+ * 是类型守卫而不是 `result.code === x`：`code` 的类型是 `number` 不是字面量，
+ * 直接比较不会收窄联合，`else` 分支里的 `data` 仍是 `T | undefined`。
  */
 export const isSoftFailure = <T>(result: SoftResult<T>, ...codes: number[]): result is SoftFailure =>
   !result.success && codes.includes(result.code)
@@ -317,9 +320,8 @@ export const registerAmagiReloadListener = (listener: AmagiReloadListener) => {
 /**
  * 四个平台的「失败必抛」fetcher。
  *
- * 类型必须显式标注：不标的话 TS 要在声明产物里展开 fetcher 的结构，而 amagi 的
- * 响应类型桶只导出 `BiliOneWork` 这样的别名、不导出底层的 `*_V0` 名字，
- * 展开时叫不出名来，报一片 TS2883。标上 amagi 导出的具名类型就没这个问题。
+ * 类型必须显式标注：不标的话 TS 要在声明产物里展开 fetcher 的结构，而响应类型桶只导出
+ * `BilibiliVideoInfoResponse` 这样的具名别名、不导出底层的 `*_V0`，展开时叫不出名来报 TS2883。
  */
 export let bilibiliFetcher: SuccessBilibiliFetcher = amagiClientInstance.amagi.bilibili.fetcher
 
@@ -330,23 +332,18 @@ export let kuaishouFetcher: SuccessKuaishouFetcher = amagiClientInstance.amagi.k
 export let xiaohongshuFetcher: SuccessXiaohongshuFetcher = amagiClientInstance.amagi.xiaohongshu.fetcher
 
 /**
- * 原始 v7 客户端。扫码登录会话（`douyin.login` / `bilibili.login`）、实例级事件
- * 总线（`events` / `on` / `once`）与 `startServer` 都从这里取。
+ * 原始 v7 客户端。扫码登录会话（`douyin.login` / `bilibili.login`）、实例级事件总线
+ * （`events` / `on` / `once`）与 `startServer` 都从这里取。
  *
  * 返回类型显式写成 {@link AmagiClient}：不写的话 TS 要在声明产物里展开这个结构，
- * 展开过程中会碰到 amagi 内部才叫得出名字的类型（如 `SearchNoteType`），
- * 报 TS4023。
- * @returns 当前的 v7 客户端实例
+ * 会碰到 amagi 内部才叫得出名字的类型（如 `SearchNoteType`），报 TS4023。
  */
 export const getAmagiClient = (): AmagiClient => amagiClientInstance.rawAmagi
 
 export const reloadAmagiConfig = () => {
   if (!amagiClientInstance.reloadConfig()) return false
 
-  /**
-   * ESM 的 `export let` 是实时绑定。这里必须在 Client 重建后同步替换各平台
-   * Fetcher，避免调用方继续持有模块初始化阶段截取的旧 Client 引用。
-   */
+  // ESM 的 `export let` 是实时绑定：Client 重建后要同步替换，否则调用方还持有旧实例截取的引用
   bilibiliFetcher = amagiClientInstance.amagi.bilibili.fetcher
   douyinFetcher = amagiClientInstance.amagi.douyin.fetcher
   kuaishouFetcher = amagiClientInstance.amagi.kuaishou.fetcher

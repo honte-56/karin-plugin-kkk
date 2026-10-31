@@ -18,14 +18,13 @@
     "format:check": "oxfmt --check",
     "prepare": "husky",
     "sort": "pnpm -r sort",
-    "postinstall": "pnpm --dir ../amagi/packages/core run build",
     "web": "pnpm --filter web run dev",
     "template": "pnpm --filter karin-plugin-kkk run template",
     "watch": "pnpm --filter karin-plugin-kkk run watch"
   },
   "dependencies": {
-    "@ikenxuan/amagi": "link:../amagi/packages/core",
-    "node-karin": "1.16.3"
+    "@ikenxuan/amagi": "workspace:*",
+    "node-karin": "1.16.5"
   },
   "devDependencies": {
     "@kkk/cli": "workspace:*",
@@ -39,5 +38,5 @@
     "typescript": "6.0.3",
     "vite": "8.2.0"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@9.15.9"
 }
