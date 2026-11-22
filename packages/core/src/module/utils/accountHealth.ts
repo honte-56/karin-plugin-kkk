@@ -21,7 +21,7 @@ interface RecordState {
 }
 
 const platforms = Object.keys(platformNames) as Platform[]
-const fingerprint = (cookie: string) => cookie ? createHash('sha256').update(cookie).digest('hex') : ''
+const fingerprint = (cookie: string) => (cookie ? createHash('sha256').update(cookie).digest('hex') : '')
 const currentKey = (p: Platform) => fingerprint(Config.amagi.cookies[p])
 const file = () => path.join(karinPathBase, Root.pluginName, 'data', 'account-health.json')
 let records: Partial<Record<Platform, RecordState>> | undefined
@@ -54,9 +54,11 @@ async function deliver(p: Platform) {
   const kind = entry.pending
   const name = platformNames[p]
   try {
-    const message = kind === 'recovered' ? `${name}账号登录已恢复。` :
-      `${name}账号${kind === 'guest' ? '已退回游客态' : '登录已失效'}，请私聊发送 #${name}登录 重新扫码。`
-    if (!await sendOwnerText(message)) return
+    const message =
+      kind === 'recovered'
+        ? `${name}账号登录已恢复。`
+        : `${name}账号${kind === 'guest' ? '已退回游客态' : '登录已失效'}，请私聊发送 #${name}登录 重新扫码。`
+    if (!(await sendOwnerText(message))) return
     const latest = state()[p]
     if (!latest) return
     latest.alerted = kind !== 'recovered'
@@ -91,8 +93,11 @@ function record(p: Platform, key: string, status: Status) {
 
 export function indicatesExpired(p: Platform, code: unknown, endpoint: string) {
   const n = Number(code)
-  return (p === 'bilibili' && n === -101) || (p === 'xiaohongshu' && n === -100) ||
+  return (
+    (p === 'bilibili' && n === -101) ||
+    (p === 'xiaohongshu' && n === -100) ||
     (p === 'kuaishou' && n === 109 && endpoint === 'kuaishou.loginUserProfile')
+  )
 }
 
 export async function observeExpired(p: Platform, cookie: string) {
@@ -109,7 +114,13 @@ async function probe(p: Platform, cookie: string): Promise<Status> {
   reloadAmagiConfig()
   const client = getAmagiClient()
   if (p === 'douyin') {
-    const { state } = await client.douyin.credentials.checkLoginState(cookie, { force: true, requestConfig: { headers: { 'User-Agent': Config.amagi['User-Agent'] }, proxy: Config.amagi.proxy?.switch ? Config.amagi.proxy : false } })
+    const { state } = await client.douyin.credentials.checkLoginState(cookie, {
+      force: true,
+      requestConfig: {
+        headers: { 'User-Agent': Config.amagi['User-Agent'] },
+        proxy: Config.amagi.proxy?.switch ? Config.amagi.proxy : false
+      }
+    })
     return state === 'unusable' ? 'unknown' : state
   }
   if (p === 'bilibili') {
@@ -127,16 +138,26 @@ export async function checkAccount(p: Platform, force = false): Promise<Status> 
   const key = fingerprint(cookie)
   if (!key) {
     running.delete(p)
-    if (state()[p]) { delete state()[p]; save() }
+    if (state()[p]) {
+      delete state()[p]
+      save()
+    }
     return 'unknown'
   }
   const active = running.get(p)
   if (active?.key === key) return active.result
   const entry = state()[p]
-  if (!force && entry?.key === key && (p === 'xiaohongshu' || entry.status !== 'unknown' || Date.now() - entry.checked < 30 * 60_000)) { await deliver(p); return entry.status }
+  if (!force && entry?.key === key && (p === 'xiaohongshu' || entry.status !== 'unknown' || Date.now() - entry.checked < 30 * 60_000)) {
+    await deliver(p)
+    return entry.status
+  }
   const job = async (): Promise<Status> => {
     let status: Status = 'unknown'
-    try { status = await probe(p, cookie) } catch { /* 网络错误不能证明登录失效 */ }
+    try {
+      status = await probe(p, cookie)
+    } catch {
+      /* 网络错误不能证明登录失效 */
+    }
     if (running.get(p)?.result !== result || currentKey(p) !== key) return 'unknown'
     record(p, key, status)
     await deliver(p)
@@ -144,7 +165,11 @@ export async function checkAccount(p: Platform, force = false): Promise<Status> 
   }
   const result: Promise<Status> = Promise.resolve().then(job)
   running.set(p, { key, result })
-  try { return await result } finally { if (running.get(p)?.result === result) running.delete(p) }
+  try {
+    return await result
+  } finally {
+    if (running.get(p)?.result === result) running.delete(p)
+  }
 }
 
 export async function checkChangedAccounts() {
@@ -162,6 +187,8 @@ export async function confirmedXhsLogin(cookie: string) {
 export async function loginReceipt(p: Platform) {
   const labels = { login: '已登录', guest: '当前为游客', expired: '登录已失效', unknown: '暂时无法确认' }
   const status = await checkAccount(p)
-  return `凭据已保存。账号状态：${labels[status]}` +
+  return (
+    `凭据已保存。账号状态：${labels[status]}` +
     (p === 'bilibili' ? (Config.amagi.cookies.bilibiliRefreshToken ? '；支持续期。' : '；无续期令牌，下次需扫码。') : '。')
+  )
 }

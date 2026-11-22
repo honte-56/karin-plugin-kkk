@@ -1,4 +1,3 @@
-import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import fs from 'node:fs'
 
 import {
@@ -36,6 +35,7 @@ import { bilibiliFetcher } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
 import { createContentIdentity, mergeContentIdentities, recordGroupContentDelivery } from '@/module/utils/ContentDelivery'
 import { logger } from '@/module/utils/logger'
+import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import {
   bilibiliProcessVideos,
   generateDecorationCard,
@@ -1150,8 +1150,11 @@ export class Bilibilipush extends Base {
     const willbepushlist: WillBePushList = { ...directLiveItems.willBePushList }
 
     let complete = true
-    for (const item of userList.filter(item => item.switch !== false)) {
-      if (pushCoolingDown('bilibili')) { complete = false; break }
+    for (const item of userList.filter((item) => item.switch !== false)) {
+      if (pushCoolingDown('bilibili')) {
+        complete = false
+        break
+      }
       try {
         const pushTypes = item.pushTypes || allBilibiliPushTypes
         const allowedDynamicTypes = new Set(pushTypes.map((pt) => pushTypeToDynamicType[pt]))
@@ -1240,7 +1243,6 @@ export class Bilibilipush extends Base {
       }
     }
     if (complete) await pushRoundSucceeded('bilibili')
-
 
     return { willbepushlist }
   }

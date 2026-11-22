@@ -82,11 +82,7 @@ export const sendErrorToMaster = async (ctx: ErrorContext, img: SendMessage, cus
  * await sendErrorToAllMasters(ctx, img)
  * ```
  */
-export const sendErrorToAllMasters = async (
-  ctx: ErrorContext,
-  img: SendMessage,
-  customPrefix?: string
-) => {
+export const sendErrorToAllMasters = async (ctx: ErrorContext, img: SendMessage, customPrefix?: string) => {
   const { options, event } = ctx
 
   if (!Config.app.errorLogSendTo.some((item) => item === 'allMasters')) return

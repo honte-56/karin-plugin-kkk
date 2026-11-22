@@ -1,4 +1,3 @@
-import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import fs from 'node:fs'
 
 import type { DouyinGuestUserInfoResponse } from '@ikenxuan/amagi'
@@ -28,6 +27,7 @@ import {
 import { Config } from '@/module/utils/Config'
 import { createContentIdentity, recordGroupContentDelivery } from '@/module/utils/ContentDelivery'
 import { logger } from '@/module/utils/logger'
+import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import { DouyinIdData, buildDouyinPlayUrl, douyinProcessVideos, type dyVideo, getDouyinID } from '@/platform/douyin'
 import type { DouyinListItem } from '@/platform/douyin/types'
 import { getDouyinLiveImageSendPolicy, getWorkTypeDisplayName, getWorkTypeInfo } from '@/platform/douyin/workType'
@@ -801,8 +801,11 @@ export class DouYinpush extends Base {
     const willbepushlist: WillBePushList = {}
 
     let complete = true
-    for (const item of userList.filter(item => item.switch !== false)) {
-      if (pushCoolingDown('douyin')) { complete = false; break }
+    for (const item of userList.filter((item) => item.switch !== false)) {
+      if (pushCoolingDown('douyin')) {
+        complete = false
+        break
+      }
       try {
         await common.sleep(2000)
 
@@ -910,7 +913,6 @@ export class DouYinpush extends Base {
       }
     }
     if (complete) await pushRoundSucceeded('douyin')
-
 
     return willbepushlist
   }

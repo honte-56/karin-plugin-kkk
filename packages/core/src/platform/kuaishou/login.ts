@@ -1,10 +1,10 @@
-import { loginReceipt } from '@/module/utils/accountHealth'
 import fs from 'node:fs'
 
 import type { AmagiError, LoginChallenge, Qrcode } from '@ikenxuan/amagi'
 import { karin, type Message } from 'node-karin'
 
 import { Common, Render } from '@/module'
+import { loginReceipt } from '@/module/utils/accountHealth'
 import { getAmagiClient, reloadAmagiConfig } from '@/module/utils/amagiClient'
 import { resolveTriggerAvatarUrl } from '@/module/utils/bot'
 import { Config } from '@/module/utils/Config'
