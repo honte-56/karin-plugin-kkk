@@ -116,8 +116,8 @@ test('failed partial download switches source without mixing files', async () =>
   const f = await fixture()
   const result = await f.tools.download({ base_url: f.url + '/partial', backup_url: [f.url + '/good'] }, { title: 'video.m4s' })
   assert.deepEqual(fs.readFileSync(result.filepath), payload)
-  assert.equal(f.downloads.length, 2)
-  assert.notEqual(f.downloads[0][1].filepath, f.downloads[1][1].filepath)
+  assert.equal(f.downloads.length, 1)
+  assert.notEqual(f.downloads[0][1].filepath, result.filepath)
   assert.deepEqual(fs.readdirSync(f.dir), ['video.m4s'])
 })
 test('all sources failing preserves existing output and cleans partial files', async () => {
@@ -125,7 +125,7 @@ test('all sources failing preserves existing output and cleans partial files', a
   fs.writeFileSync(path.join(f.dir, 'video.m4s'), 'existing')
   await assert.rejects(
     f.tools.download({ base_url: f.url + '/partial', backup_url: [f.url + '/bad'] }, { title: 'video.m4s' }),
-    /已尝试 2 个地址/
+    /全部 2 条 CDN 线路下载失败/
   )
   assert.equal(fs.readFileSync(path.join(f.dir, 'video.m4s'), 'utf8'), 'existing')
   assert.deepEqual(fs.readdirSync(f.dir), ['video.m4s'])

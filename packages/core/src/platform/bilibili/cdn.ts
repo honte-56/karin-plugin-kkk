@@ -5,6 +5,8 @@ import type { AxiosRequestConfig, AxiosResponse } from 'node-karin/axios'
 
 import type { downLoadFileOptions, fileInfo } from '@/module/utils/Base'
 
+import { selectBilibiliStreamUrl } from './cdn-selector'
+
 export type BilibiliStream =
   | string
   | { base_url?: string; baseUrl?: string; url?: string; backup_url?: string[] | null; backupUrl?: string[] | null }
@@ -95,32 +97,16 @@ export function createBilibiliCdnTools({ request, downloadFile, resolvePath, log
   const download = async (stream: BilibiliStream, options: downLoadFileOptions) => {
     const urls = candidates(stream)
     const target = resolvePath(options)
-    let lastError
-    for (const url of urls) {
-      // Never resume one CDN's partial response using a different CDN.
-      const temporary = `${target}.cdn-${randomUUID()}`
-      try {
-        const result = await downloadFile(url, {
-          ...options,
-          filepath: temporary,
-          maxRetries: urls.length > 1 ? 0 : 3
-        })
-        fs.renameSync(result.filepath, target)
-        remember(stream, url)
-        return { ...result, filepath: target }
-      } catch (error) {
-        if (['ENOSPC', 'EACCES', 'EROFS', 'ENOENT'].includes((error as NodeJS.ErrnoException)?.code ?? '')) throw error
-        lastError = error
-        warning('下载', url)
-      } finally {
-        try {
-          fs.rmSync(temporary, { force: true })
-        } catch {
-          logger.warn('[karin-plugin-kkk] B站下载临时文件清理失败')
-        }
-      }
+    const selected = await selectBilibiliStreamUrl({ base_url: urls[0], backup_url: urls.slice(1) }, options.headers)
+    if (!selected) throw new Error('B站未提供可用的下载地址')
+    const temporary = `${target}.cdn-${randomUUID()}`
+    try {
+      const result = await downloadFile(selected, { ...options, filepath: temporary, maxRetries: urls.length > 1 ? 0 : 3 })
+      fs.renameSync(result.filepath, target)
+      return { ...result, filepath: target }
+    } finally {
+      fs.rmSync(temporary, { force: true })
     }
-    throw new Error(`B站视频/音频下载失败，已尝试 ${urls.length} 个地址`, { cause: lastError })
   }
   return { size, download }
 }

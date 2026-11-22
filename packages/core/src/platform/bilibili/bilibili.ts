@@ -1,3 +1,4 @@
+import { selectBilibiliStreamUrl } from './cdn-selector'
 import fs from 'node:fs'
 
 import {
@@ -1269,10 +1270,11 @@ export class Bilibili extends Base {
       }
       case false: {
         /** 没登录（没配置ck）情况下直接发直链，传直链在DownLoadVideo()处理 */
-        logger.debug('视频 URL:', playUrlData.data.durl[0].url)
+        const selected = await selectBilibiliStreamUrl(playUrlData.data.durl[0], this.headers)
+        if (!selected) throw new Error('B站未提供可用的下载地址')
         // 如果需要烧录弹幕，先下载视频再烧录
         if ((this.forceBurnDanmaku || Config.bilibili.burnDanmaku) && danmakuList.length > 0) {
-          const videoFile = await downloadFile(playUrlData.data.durl[0].url, {
+          const videoFile = await downloadFile(selected, {
             title: `Bil_V_tmp_${Date.now()}.mp4`,
             headers: this.headers
           })
@@ -1305,7 +1307,7 @@ export class Bilibili extends Base {
           }
         } else {
           await downloadVideo(this.e, {
-            video_url: playUrlData.data.durl[0].url,
+            video_url: selected,
             title: { timestampTitle: `tmp_${Date.now()}.mp4`, originTitle: `${this.downloadfilename}.mp4` }
           })
         }
