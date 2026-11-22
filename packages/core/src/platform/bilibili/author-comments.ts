@@ -26,6 +26,8 @@ const now = () => Math.floor(Date.now() / 1000)
 const file = () => path.join(karinPathBase, Root.pluginName, 'data', 'author-comments.json')
 let loaded: WatchState | undefined
 let running = false
+type CommentImage = { key: string; elements: ImageElement[] }
+const retryImages = new Map<string, { image: CommentImage; expires: number }>()
 
 function state() {
   if (!loaded) loaded = fs.existsSync(file()) ? (JSON.parse(fs.readFileSync(file(), 'utf8')) as WatchState) : emptyWatch()
@@ -122,6 +124,7 @@ export async function runCommentWatch() {
   try {
     syncCommentSubscriptions()
     const store = state()
+    for (const [key, cached] of retryImages) if (cached.expires <= now()) retryImages.delete(key)
     // 限制为每分钟最多两个动态，每个动态至多三次分页请求。
     const posts = Object.values(store.posts).sort((a, b) => a.lastTurn - b.lastTurn)
     let budget = 2
@@ -145,11 +148,14 @@ export async function runCommentWatch() {
         now() < post.published + 86400 &&
         (enabled().get(post.uid)?.includes(target) ?? false) &&
         karin.getAllBotID().includes(target.split(':')[1])
-      await deliverPost<ImageElement[]>(
+      await deliverPost<CommentImage>(
         post,
         {
           allowed,
-          render: async (p, root, card, target) => {
+          render: async (p, root, card, target, signature) => {
+            const key = p.id + ':' + root + ':' + signature
+            const cached = retryImages.get(key)
+            if (cached) return cached.image
             const botId = target.split(':')[1]
             const url = `https://t.bilibili.com/${p.id}#reply${root}`
             const image = await Render(
@@ -167,15 +173,19 @@ export async function runCommentWatch() {
               { singlePage: true }
             )
             if (image.length !== 1) throw new Error('评论图未生成')
-            return image
+            return { key, elements: image }
           },
           send: async (target, image) => {
             const [group, bot] = target.split(':')
-            try {
-              return Boolean((await karin.sendMsg(bot, karin.contactGroup(group), image, { retryCount: 0 })).messageId)
-            } catch {
-              return false
+            const result = await karin.sendMsg(bot, karin.contactGroup(group), image.elements, { retryCount: 0 }).catch(() => undefined)
+            if (result?.messageId) {
+              logger.info(`[主播评论] 动态 ${post.id} 评论图已送达`)
+              return true
             }
+            if (retryImages.size >= 4 && !retryImages.has(image.key)) retryImages.delete(retryImages.keys().next().value!)
+            retryImages.set(image.key, { image, expires: now() + 600 })
+            logger.warn(`[主播评论] 动态 ${post.id} 评论图未取得回执，保留待发记录`)
+            return false
           }
         },
         save

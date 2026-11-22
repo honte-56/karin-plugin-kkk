@@ -130,10 +130,11 @@ function rememberRoot(post: WatchedPost, row: CommentReply, pinned: boolean) {
   const id = idOf(row)
   if (!id || !row.member || !row.content || row.invisible) return
   const own = authored(row, post.uid)
-  const preview = row.replies ?? []
+  const preview: SubReply[] = row.replies ?? []
   if (!own && !row.up_action?.reply && !preview.some((r) => authored(r, post.uid)) && !post.threads[id]) return
-  const thread = (post.threads[id] ??= { card: {} as CommentItem, children: {}, page: 0, high: 0, through: 0, checked: 0 })
-  thread.card = { ...buildCommentItem({ ...row, replies: [] }, post.uid, [], { id: 0, isTop: pinned }), isUP: own }
+  const card = { ...buildCommentItem({ ...row, replies: [] }, post.uid, [], { id: 0, isTop: pinned }), isUP: own }
+  const thread = (post.threads[id] ??= { card, children: {}, page: 0, high: 0, through: 0, checked: 0 })
+  thread.card = card
   for (const child of preview) rememberChild(post, id, thread, child)
   // 预览已经覆盖整楼，就无需再请求楼中楼接口。
   if (preview.length >= row.rcount) {
@@ -208,6 +209,7 @@ export async function scanPost(post: WatchedPost, now: number, io: ScanIO, check
   for (const [root, t] of candidates.slice(0, 2)) {
     const pn = t.page || Math.max(1, Math.ceil(t.card.replylength / PAGE_SIZE))
     if (!t.page) t.high = t.card.replylength
+    t.checked = now
     const page = await io.replies(post, root, pn)
     for (const row of page.rows) rememberChild(post, root, t, row)
     t.card.replylength = page.count
@@ -223,7 +225,6 @@ export async function scanPost(post: WatchedPost, now: number, io: ScanIO, check
       t.page = 0
       t.through = Math.min(t.high, page.count)
     }
-    t.checked = now
     checkpoint()
   }
   const more = post.cursor || candidates.length > 2 || Object.values(post.threads).some((t) => t.page)
@@ -233,7 +234,7 @@ export async function scanPost(post: WatchedPost, now: number, io: ScanIO, check
 
 export type DeliveryIO<Image> = {
   allowed: (target: string) => boolean
-  render: (p: FeedPost, root: string, card: CommentItem, target: string) => Promise<Image>
+  render: (p: FeedPost, root: string, card: CommentItem, target: string, signature: string) => Promise<Image>
   send: (target: string, image: Image) => Promise<boolean>
 }
 // 待发集合由已发现的发言减去每个群自己的回执得到。主评论作为上下文可重复出现。
@@ -251,7 +252,7 @@ export async function deliverPost<Image>(post: WatchedPost, io: DeliveryIO<Image
       const signature = children.map(([id]) => id).join(',')
       let image = rendered.get(signature)
       if (!image) {
-        image = await io.render(post, root, { ...t.card, replies: children.map(([, c]) => c) }, target)
+        image = await io.render(post, root, { ...t.card, replies: children.map(([, c]) => c) }, target, signature)
         rendered.set(signature, image)
       }
       if (io.allowed(target) && (await io.send(target, image))) {
