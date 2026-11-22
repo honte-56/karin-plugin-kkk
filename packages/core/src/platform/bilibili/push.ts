@@ -1,3 +1,4 @@
+import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import fs from 'node:fs'
 
 import {
@@ -249,6 +250,10 @@ export class Bilibilipush extends Base {
         })
         liveStatus = liveStatusResult.data.data
       } catch (error) {
+        if ((error as { kind?: string })?.kind === 'risk' || [-352, -412, 429].includes((error as { code?: number })?.code ?? 0)) {
+          await subscriptionFailed('bilibili', item.host_mid, error)
+          break
+        }
         logger.warn(
           `[Bilibili 推送] UP主 ${item.remark}（${item.host_mid}）直播状态直查失败，本轮停止直查并让剩余订阅回退到直播动态检测：${formatErrorMessage(error)}`
         )
@@ -293,6 +298,10 @@ export class Bilibilipush extends Base {
         } as BilibiliPushItem
         handledUids.add(item.host_mid)
       } catch (error) {
+        if ((error as { kind?: string })?.kind === 'risk' || [-352, -412, 429].includes((error as { code?: number })?.code ?? 0)) {
+          await subscriptionFailed('bilibili', item.host_mid, error)
+          break
+        }
         logger.warn(
           `[Bilibili 推送] UP主 ${item.remark}（${item.host_mid}）直播场次信息不完整，本轮回退到直播动态检测：${formatErrorMessage(error)}`
         )
@@ -1136,13 +1145,14 @@ export class Bilibilipush extends Base {
    * @returns
    */
   async getDynamicList(userList: bilibiliPushItem[]) {
+    if (pushCoolingDown('bilibili')) return { willbepushlist: {} as WillBePushList }
     const directLiveItems = await this.getDirectLivePushItems(userList)
     const willbepushlist: WillBePushList = { ...directLiveItems.willBePushList }
 
-    try {
-      /** 过滤掉不启用的订阅项 */
-      const filteredUserList = userList.filter((item) => item.switch !== false)
-      for (const item of filteredUserList) {
+    let complete = true
+    for (const item of userList.filter(item => item.switch !== false)) {
+      if (pushCoolingDown('bilibili')) { complete = false; break }
+      try {
         const pushTypes = item.pushTypes || allBilibiliPushTypes
         const allowedDynamicTypes = new Set(pushTypes.map((pt) => pushTypeToDynamicType[pt]))
         if (directLiveItems.handledUids.has(item.host_mid)) {
@@ -1224,10 +1234,13 @@ export class Bilibilipush extends Base {
           }
         } else {
         }
+      } catch (error) {
+        complete = false
+        if (await subscriptionFailed('bilibili', item.host_mid, error)) break
       }
-    } catch (error) {
-      throw new Error(`获取动态列表失败: ${error}`)
     }
+    if (complete) await pushRoundSucceeded('bilibili')
+
 
     return { willbepushlist }
   }

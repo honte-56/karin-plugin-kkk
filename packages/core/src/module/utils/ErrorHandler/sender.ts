@@ -1,10 +1,9 @@
-import karin, { config, segment } from 'node-karin'
+import karin, { config, segment, type SendMessage } from 'node-karin'
 
 import { logger } from '@/module/utils/logger'
 
 import { getReachableMasterBots } from '../bot'
 import { Config } from '../Config'
-import type { renderErrorImage } from './render'
 import type { ErrorContext } from './types'
 import { isPushTask } from './utils'
 
@@ -17,7 +16,7 @@ import { isPushTask } from './utils'
  * @remarks
  * 仅当配置 `errorLogSendTo` 包含 `'trigger'` 且存在 event 时发送
  */
-export const sendErrorToTrigger = async (ctx: ErrorContext, img: Awaited<ReturnType<typeof renderErrorImage>>) => {
+export const sendErrorToTrigger = async (ctx: ErrorContext, img: SendMessage) => {
   const { event, options } = ctx
 
   if (!event) return
@@ -48,7 +47,7 @@ export const sendErrorToTrigger = async (ctx: ErrorContext, img: Awaited<ReturnT
  * await sendErrorToMaster(ctx, img, '自定义前缀消息')
  * ```
  */
-export const sendErrorToMaster = async (ctx: ErrorContext, img: Awaited<ReturnType<typeof renderErrorImage>>, customPrefix?: string) => {
+export const sendErrorToMaster = async (ctx: ErrorContext, img: SendMessage, customPrefix?: string) => {
   const { options, event } = ctx
 
   if (!Config.app.errorLogSendTo.some((item) => item === 'master')) return
@@ -85,7 +84,7 @@ export const sendErrorToMaster = async (ctx: ErrorContext, img: Awaited<ReturnTy
  */
 export const sendErrorToAllMasters = async (
   ctx: ErrorContext,
-  img: Awaited<ReturnType<typeof renderErrorImage>>,
+  img: SendMessage,
   customPrefix?: string
 ) => {
   const { options, event } = ctx

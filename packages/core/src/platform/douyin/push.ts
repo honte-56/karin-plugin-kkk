@@ -1,3 +1,4 @@
+import { pushCoolingDown, pushRoundSucceeded, subscriptionFailed } from '@/module/utils/pushFailures'
 import fs from 'node:fs'
 
 import type { DouyinGuestUserInfoResponse } from '@ikenxuan/amagi'
@@ -799,10 +800,10 @@ export class DouYinpush extends Base {
   async getDynamicList(userList: douyinPushItem[]): Promise<WillBePushList> {
     const willbepushlist: WillBePushList = {}
 
-    try {
-      /** 过滤掉不启用的订阅项 */
-      const filteredUserList = userList.filter((item) => item.switch !== false)
-      for (const item of filteredUserList) {
+    let complete = true
+    for (const item of userList.filter(item => item.switch !== false)) {
+      if (pushCoolingDown('douyin')) { complete = false; break }
+      try {
         await common.sleep(2000)
 
         if (!item.sec_uid) {
@@ -903,10 +904,13 @@ export class DouYinpush extends Base {
             }
           }
         }
+      } catch (error) {
+        complete = false
+        if (await subscriptionFailed('douyin', item.sec_uid, error)) break
       }
-    } catch (error) {
-      throw new Error(`获取抖音用户内容列表失败: ${error}`)
     }
+    if (complete) await pushRoundSucceeded('douyin')
+
 
     return willbepushlist
   }

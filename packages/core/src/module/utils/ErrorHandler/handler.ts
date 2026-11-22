@@ -1,5 +1,5 @@
 import type { ApiErrorData } from '@template/template/other/handlerError/components/types'
-import { type Message } from 'node-karin'
+import { segment, type Message } from 'node-karin'
 
 import { getBuildMetadata } from '@/module'
 import { EmojiReactionManager } from '@/module/utils/EmojiReaction'
@@ -41,7 +41,11 @@ export const handleBusinessError = async (
       }
     }
 
-    const img = await renderErrorImage(ctx)
+    const img = await renderErrorImage(ctx).catch(() => {
+      logger.warn('[ErrorHandler] 错误截图失败，改发文字摘要')
+      const code = (error as { code?: number }).code
+      return [segment.text(`${options.businessName}执行出错（${code ?? error.name}），详情请查看运行日志。`)]
+    })
     await sendErrorToTrigger(ctx, img)
     await sendErrorToMaster(ctx, img)
     await sendErrorToAllMasters(ctx, img)
