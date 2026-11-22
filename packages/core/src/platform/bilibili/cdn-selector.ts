@@ -303,7 +303,7 @@ export class BilibiliCdnSelector {
     const candidates = this.rank(normal.length > 0 ? normal : original).slice(0, 6)
     if (candidates.length === 0) return undefined
     // 常规线路优先测速，仍保留平台下发的 PCDN 作为最后的下载备选。
-    const fallbacks = [...candidates, ...original.filter(url => !candidates.includes(url))].slice(0, 6)
+    const fallbacks = [...candidates, ...original.filter((url) => !candidates.includes(url))].slice(0, 6)
     for (const url of candidates) this.routes.set(url, { candidates: fallbacks, expiresAt: now + 600000 })
     this.trim(this.routes)
     if (normal.length === 0) return candidates[0]

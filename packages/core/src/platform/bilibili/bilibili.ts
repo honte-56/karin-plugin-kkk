@@ -1,4 +1,3 @@
-import { selectBilibiliStreamUrl } from './cdn-selector'
 import fs from 'node:fs'
 
 import {
@@ -55,6 +54,7 @@ import {
 import { BilibiliDataTypes } from '@/types'
 
 import { createBilibiliCdnTools, streamUrls, type BilibiliStream } from './cdn'
+import { selectBilibiliStreamUrl } from './cdn-selector'
 
 let img: ElementTypes[]
 type videoDownloadUrlList = BilibiliVideoStreamResponse['data']['dash']['video']
