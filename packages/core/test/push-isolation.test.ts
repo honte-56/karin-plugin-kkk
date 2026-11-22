@@ -4,6 +4,7 @@ import type { bilibiliPushItem } from '../src/types/config/pushlist'
 const m = vi.hoisted(() => ({ read: vi.fn(), sent: vi.fn().mockResolvedValue(true), pushed: vi.fn(), log: new Proxy({}, {get: () => () => ''}) }))
 vi.mock('node-karin', () => ({ common: { sleep: vi.fn() }, logger: m.log, default: {} }))
 vi.mock('@/module', () => ({ Base: class { amagi = { bilibili: { fetcher: {fetchUserDynamicList: m.read} } } }, baseHeaders: {}, bilibiliDB: {isDynamicPushed: m.pushed} }))
+vi.mock('@/module/utils/ContentDelivery', () => ({}))
 vi.mock('@/module/utils/Config', () => ({Config: {amagi:{cookies:{bilibili:'fixture'}},app:{errorLogSendTo:['master']}}}))
 vi.mock('@/module/utils/logger', () => ({logger:m.log}))
 vi.mock('@/module/utils/accountHealth', () => ({platformNames:{bilibili:'B站'},sendOwnerText:m.sent}))
