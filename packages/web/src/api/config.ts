@@ -24,7 +24,10 @@ export const getConfig = async (): Promise<ConfigType> => {
 /**
  * 保存配置
  */
-export const saveConfig = async (config: ConfigType): Promise<void> => {
-  const response = await authClient.post<ApiResponse<void>>(`${API_BASE_URL}/config`, config)
-  unwrapResponse(response.data, '保存配置失败')
+type SavedConfig = { config: ConfigType; results: { success: boolean }[]; accountStatus?: string[] }
+export const saveConfig = async (config: ConfigType): Promise<SavedConfig> => {
+  const response = await authClient.post<ApiResponse<SavedConfig>>(`${API_BASE_URL}/config`, config)
+  const data = unwrapResponse(response.data, '保存配置失败')
+  if (data.results.some(r => !r.success)) throw new Error('部分配置保存失败，请刷新核对')
+  return data
 }

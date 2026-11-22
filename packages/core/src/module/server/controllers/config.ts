@@ -5,6 +5,7 @@
 import { createBadRequestResponse, createServerErrorResponse, createSuccessResponse } from 'node-karin'
 import type { Request, Response } from 'node-karin/express'
 
+import { loginReceipt, platformNames, type Platform } from '@/module/utils/accountHealth'
 import { reloadAmagiConfig } from '@/module/utils/amagiClient'
 import { Config } from '@/module/utils/Config'
 import type { ConfigType } from '@/types'
@@ -71,11 +72,14 @@ export const updateAllConfig = async (req: Request, res: Response) => {
     const allSuccess = results.every((r) => r.success)
     const updatedConfig = await Config.All()
 
+    const changed = (Object.keys(platformNames) as Platform[]).filter(p => oldConfig.amagi.cookies[p] !== updatedConfig.amagi.cookies[p])
+    const accountStatus = await Promise.all(changed.map(async p => platformNames[p] + '：' +
+      (updatedConfig.amagi.cookies[p] ? await loginReceipt(p) : '已停用')))
     return createSuccessResponse(
       res,
       {
         config: updatedConfig,
-        results
+        results, accountStatus
       },
       allSuccess ? '所有配置更新成功' : '部分配置更新失败'
     )

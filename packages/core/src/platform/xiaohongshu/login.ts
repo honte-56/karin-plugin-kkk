@@ -1,4 +1,4 @@
-import { loginReceipt } from '@/module/utils/accountHealth'
+import { confirmedXhsLogin, loginReceipt } from '@/module/utils/accountHealth'
 import fs from 'node:fs'
 
 import type { AmagiError, LoginChallenge, Qrcode } from '@ikenxuan/amagi'
@@ -198,6 +198,7 @@ export const xiaohongshuLogin = async (e: Message): Promise<boolean> => {
 
       onSuccess: async (credential) => {
         await persistCookie(credential.cookie)
+        await confirmedXhsLogin(credential.cookie)
       }
     })
 

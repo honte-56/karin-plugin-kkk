@@ -10,7 +10,7 @@ import Client, {
 
 import { logger } from '@/module/utils/logger'
 
-import { indicatesExpired, observeExpired } from './accountHealth'
+import { checkAccount, indicatesExpired, observeExpired } from './accountHealth'
 import { Config } from './Config'
 
 /** v7 客户端实例 */
@@ -141,7 +141,10 @@ const settleFailure = async (returned: PromiseLike<unknown>, platform: PlatformK
   if (!isFailureEnvelope(result)) return result
 
   if (indicatesExpired(platform, result.error.platform?.code, result.meta.endpoint)) {
-    void observeExpired(platform, cookie).catch(() => logger.warn('[账号探活] 记录业务登录状态失败'))
+    const update = platform === 'bilibili' && result.meta.endpoint !== 'bilibili.loginStatus'
+      ? (cookie === Config.amagi.cookies.bilibili ? checkAccount(platform, true) : Promise.resolve())
+      : observeExpired(platform, cookie)
+    void update.catch(() => logger.warn('[账号探活] 记录业务登录状态失败'))
   }
   const failure = new AmagiError(result)
   const { handleRiskChallenge } = await import('@/module/utils/RiskVerify')

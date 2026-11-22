@@ -93,13 +93,14 @@ const ConfigPanel = ({ device = 'desktop' }: ConfigPanelProps) => {
     if (!config || hasValidationError) return
 
     const nextConfig = config
-    const savePromise = submitConfig(nextConfig).then(() => {
-      setPanelState({ savedConfig: nextConfig })
+    const savePromise = submitConfig(nextConfig).then(result => {
+      setPanelState(current => ({ savedConfig: result.config, config: current.config === nextConfig ? structuredClone(result.config) : current.config }))
+      return result.accountStatus?.join('；') || '配置已保存' 
     })
 
     toast.promise(savePromise, {
       loading: '正在保存配置...',
-      success: '配置已保存',
+      success: (message) => message,
       error: (error) => (error instanceof Error ? error.message : '保存配置失败')
     })
   })

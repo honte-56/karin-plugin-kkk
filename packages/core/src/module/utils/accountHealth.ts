@@ -44,7 +44,7 @@ export async function sendOwnerText(text: string) {
   const [target] = await getReachableMasterBots()
   if (!target) return false
   const result = await karin.sendMaster(target.bot.account.selfId, target.master, [segment.text(text)])
-  return Boolean(result)
+  return Boolean(result?.messageId)
 }
 
 async function deliver(p: Platform) {
@@ -149,6 +149,14 @@ export async function checkAccount(p: Platform, force = false): Promise<Status> 
 
 export async function checkChangedAccounts() {
   for (const p of platforms) await checkAccount(p)
+}
+
+// 此信号来自平台已确认的扫码会话，手工粘贴的 Cookie 不能使用它。
+export async function confirmedXhsLogin(cookie: string) {
+  if (!cookie || Config.amagi.cookies.xiaohongshu !== cookie) return
+  running.delete('xiaohongshu')
+  record('xiaohongshu', fingerprint(cookie), 'login')
+  await deliver('xiaohongshu')
 }
 
 export async function loginReceipt(p: Platform) {

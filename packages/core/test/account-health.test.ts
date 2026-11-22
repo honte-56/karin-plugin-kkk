@@ -39,7 +39,7 @@ it('过期通知在重启后去重，更换有效凭据恢复一次', async () =
 })
 it('通知失败可重试，删除凭据清除待发通知', async () => {
   const api = await load()
-  m.send.mockRejectedValueOnce(new Error('offline'))
+  m.send.mockResolvedValueOnce({})
   m.check.mockResolvedValue({ state: 'expired' })
   await api.checkAccount('douyin')
   await api.checkAccount('douyin')
