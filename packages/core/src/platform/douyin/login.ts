@@ -1,3 +1,4 @@
+import { loginReceipt } from '@/module/utils/accountHealth'
 import fs from 'node:fs'
 
 import type { AmagiError, LoginChallenge, Qrcode, SmsChallenge } from '@ikenxuan/amagi'
@@ -222,7 +223,7 @@ export const douyinLogin = async (e: Message) => {
     await tracker.recallAll()
 
     if (outcome.ok) {
-      await e.reply('登录成功！用户登录凭证已保存至配置', { reply: true })
+      await e.reply(await loginReceipt('douyin'), { reply: true })
       return true
     }
 

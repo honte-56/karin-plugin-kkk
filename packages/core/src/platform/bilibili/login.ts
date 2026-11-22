@@ -1,3 +1,4 @@
+import { loginReceipt } from '@/module/utils/accountHealth'
 import fs from 'node:fs'
 
 import type { AmagiError, Qrcode } from '@ikenxuan/amagi'
@@ -121,19 +122,15 @@ export const bilibiliLogin = async (e: Message) => {
       },
 
       onSuccess: async (credential) => {
-        await Config.Modify('amagi', 'cookies.bilibili', credential.cookie)
-        // 续期令牌与 cookie 一起存：官方 Web 把它放在 localStorage.ac_time_value，
-        // 我们落到配置里，好让「B站续期」命令不必重新扫码
-        const refreshToken = readRefreshToken(credential.raw)
-        if (refreshToken) await Config.Modify('amagi', 'cookies.bilibiliRefreshToken', refreshToken)
-        else logger.warn('[B站登录] 本次登录未返回 refresh_token，后续无法续期，只能重新扫码')
+        const refreshToken = readRefreshToken(credential.raw) ?? ''
+        await Config.Modify('amagi', 'cookies', { ...Config.amagi.cookies, bilibili: credential.cookie, bilibiliRefreshToken: refreshToken })
         const reloaded = reloadAmagiConfig()
         logger.mark(`[B站登录] 登录凭证已保存，Amagi Client ${reloaded ? '已重载' : '配置未变化'}`)
       }
     })
 
     if (outcome.ok) {
-      await e.reply('登录成功！用户登录凭证已保存至配置', { reply: true })
+      await e.reply(await loginReceipt('bilibili'), { reply: true })
     } else {
       logger.warn(`[B站登录] 会话结束于失败态: kind=${outcome.error.kind} code=${outcome.error.code}`)
       await e.reply(noticeOf(outcome.error), { reply: true })
@@ -177,10 +174,13 @@ export const bilibiliRefreshLogin = async (e: Message): Promise<boolean> => {
     return true
   }
 
-  await Config.Modify('amagi', 'cookies.bilibili', result.credential.cookie)
-  await Config.Modify('amagi', 'cookies.bilibiliRefreshToken', result.credential.refreshToken)
+  if (Config.amagi.cookies.bilibili !== cookie || Config.amagi.cookies.bilibiliRefreshToken !== refreshToken) {
+    await e.reply('续期期间登录凭据已变更，保留最新凭据。', { reply: true })
+    return true
+  }
+  await Config.Modify('amagi', 'cookies', { ...Config.amagi.cookies, bilibili: result.credential.cookie, bilibiliRefreshToken: result.credential.refreshToken })
   const reloaded = reloadAmagiConfig()
   logger.mark(`[B站续期] 新 cookie 与 refresh_token 已保存，Amagi Client ${reloaded ? '已重载' : '配置未变化'}`)
-  await e.reply('B站登录态已续期，新的 cookie 与续期令牌已保存', { reply: true })
+  await e.reply(await loginReceipt('bilibili'), { reply: true })
   return true
 }

@@ -10,6 +10,7 @@ import Client, {
 
 import { logger } from '@/module/utils/logger'
 
+import { indicatesExpired, observeExpired } from './accountHealth'
 import { Config } from './Config'
 
 /** v7 客户端实例 */
@@ -135,10 +136,13 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
  * @param platform - 平台名，RiskVerify 用它做去重键与提示文案
  * @param call - 原调用的重放：同一方法、同一参数、同一份 CK
  */
-const settleFailure = async (returned: PromiseLike<unknown>, platform: PlatformKey, call: () => unknown): Promise<unknown> => {
+const settleFailure = async (returned: PromiseLike<unknown>, platform: PlatformKey, call: () => unknown, cookie: string): Promise<unknown> => {
   const result = await returned
   if (!isFailureEnvelope(result)) return result
 
+  if (indicatesExpired(platform, result.error.platform?.code, result.meta.endpoint)) {
+    void observeExpired(platform, cookie).catch(() => logger.warn('[账号探活] 记录业务登录状态失败'))
+  }
   const failure = new AmagiError(result)
   const { handleRiskChallenge } = await import('@/module/utils/RiskVerify')
   const solved = await handleRiskChallenge(failure, platform, () => probeReplay(call))
@@ -169,7 +173,7 @@ const probeReplay = async (call: () => unknown): Promise<boolean> => {
  * 带风控挑战的失败不直接抛：先交给 `RiskVerify` 走完整条验证流程（发二维码给主人 → 轮询重放），
  * 过码成功就重放拿正常结果，没成功再把原错误抛出去 —— 见 {@link settleFailure}。
  */
-const throwOnFailure = <T extends object>(target: T, platform: PlatformKey): T =>
+const throwOnFailure = <T extends object>(target: T, platform: PlatformKey, cookie: string): T =>
   new Proxy(target, {
     get(obj: any, prop: string | symbol) {
       const value = obj[prop]
@@ -180,12 +184,12 @@ const throwOnFailure = <T extends object>(target: T, platform: PlatformKey): T =
           const returned = call()
           // 同步方法原样放行：包成 async 会把返回值套一层 Promise，破坏语义
           if (!isThenable(returned)) return returned
-          return settleFailure(returned, platform, call)
+          return settleFailure(returned, platform, call, cookie)
         }
       }
 
       if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return throwOnFailure(value, platform)
+        return throwOnFailure(value, platform, cookie)
       }
 
       return value
@@ -256,10 +260,10 @@ export class AmagiBase {
   protected wrapAmagiClient = (client: AmagiClient): ThrowingClient =>
     ({
       ...client,
-      bilibili: { ...client.bilibili, fetcher: throwOnFailure(client.bilibili.fetcher, 'bilibili') },
-      douyin: { ...client.douyin, fetcher: throwOnFailure(client.douyin.fetcher, 'douyin') },
-      kuaishou: { ...client.kuaishou, fetcher: throwOnFailure(client.kuaishou.fetcher, 'kuaishou') },
-      xiaohongshu: { ...client.xiaohongshu, fetcher: throwOnFailure(client.xiaohongshu.fetcher, 'xiaohongshu') }
+      bilibili: { ...client.bilibili, fetcher: throwOnFailure(client.bilibili.fetcher, 'bilibili', Config.amagi.cookies.bilibili) },
+      douyin: { ...client.douyin, fetcher: throwOnFailure(client.douyin.fetcher, 'douyin', Config.amagi.cookies.douyin) },
+      kuaishou: { ...client.kuaishou, fetcher: throwOnFailure(client.kuaishou.fetcher, 'kuaishou', Config.amagi.cookies.kuaishou) },
+      xiaohongshu: { ...client.xiaohongshu, fetcher: throwOnFailure(client.xiaohongshu.fetcher, 'xiaohongshu', Config.amagi.cookies.xiaohongshu) }
     }) as ThrowingClient
 }
 

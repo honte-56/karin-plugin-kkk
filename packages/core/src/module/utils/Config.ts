@@ -165,6 +165,13 @@ class Cfg {
     const bilibiliDB = await getBilibiliDB()
 
     const jsonConfig = this.getJson()
+    if (name === 'amagi') {
+      const next = (config as ConfigType['amagi']).cookies
+      const previous = jsonConfig.amagi?.cookies
+      if (next && previous && next.bilibili !== previous.bilibili && next.bilibiliRefreshToken === previous.bilibiliRefreshToken) {
+        next.bilibiliRefreshToken = ''
+      }
+    }
     jsonConfig[name] = config
     this.setJson(jsonConfig)
 
