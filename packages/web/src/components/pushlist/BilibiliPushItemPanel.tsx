@@ -93,6 +93,19 @@ const BilibiliPushItemPanel = ({ item, index, list, onChange, device }: Bilibili
               value={item.pushTypes || []}
               onChange={(pushTypes) => updateItem({ pushTypes })}
             />
+            <Switch
+              isDisabled={disabled}
+              isSelected={item.authorComments === true}
+              onChange={(authorComments) => updateItem({ authorComments })}
+            >
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              <Switch.Content>
+                <Label>主播评论与回复</Label>
+                <Description>新动态发布后 24 小时内，将主播本人的评论和楼中楼渲染为图片，发到上面选定的群。</Description>
+              </Switch.Content>
+            </Switch>
             <FilterModeField
               disabled={disabled}
               device={device}

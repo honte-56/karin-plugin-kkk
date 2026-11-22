@@ -21,7 +21,7 @@ const handleDouyinPush = wrapWithErrorHandler(
 // 包装B站推送任务
 const handleBilibiliPush = wrapWithErrorHandler(
   async () => {
-    await new Bilibilipush().action()
+    await new Bilibilipush().action(true)
     return true
   },
   {

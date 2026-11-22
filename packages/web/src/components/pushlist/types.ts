@@ -44,6 +44,8 @@ export interface BilibiliPushItem {
   group_id: string[]
   remark: string
   pushTypes?: BilibiliPushType[]
+  /** 追踪此 UP 新动态发布后 24 小时内的本人留言。 */
+  authorComments?: boolean
   filterMode?: PushFilterMode
   Keywords?: string[]
   Tags?: string[]

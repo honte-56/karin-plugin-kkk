@@ -165,7 +165,7 @@ export class Bilibilipush extends Base {
   /**
    * 执行主要的操作流程
    */
-  async action() {
+  async action(watchAuthorComments = false) {
     await this.syncConfigToDatabase()
 
     // 检查并补全配置文件中缺失的字段
@@ -186,6 +186,14 @@ export class Bilibilipush extends Base {
     }
 
     const data = await this.getDynamicList(filteredPushList)
+    if (watchAuthorComments && filteredPushList.some((item) => item.authorComments)) {
+      try {
+        const { observeCommentPosts } = await import('./author-comments')
+        observeCommentPosts(Object.values(data.willbepushlist))
+      } catch {
+        logger.warn('[主播评论] 保存监听动态失败，稍后重试')
+      }
+    }
     const pushdata = await this.excludeAlreadyPushed(data.willbepushlist)
 
     if (Object.keys(pushdata).length === 0) return true

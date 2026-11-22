@@ -1,0 +1,187 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
+import karin, { logger, type ImageElement, type Message } from 'node-karin'
+import { karinPathBase } from 'node-karin/root'
+
+import { getAmagiClient, AmagiError } from '@/module/utils/amagiClient'
+import { Config } from '@/module/utils/Config'
+import { pushCoolingDown } from '@/module/utils/pushFailures'
+import { Render } from '@/module/utils/Render'
+import { Root } from '@/root'
+
+import {
+  deliverPost,
+  discover,
+  emptyWatch,
+  reconcile,
+  scanPost,
+  subscriptions,
+  type FeedPost,
+  type WatchState
+} from './author-comment-watch'
+import type { CommentReply, SubReply } from './comments'
+
+const now = () => Math.floor(Date.now() / 1000)
+const file = () => path.join(karinPathBase, Root.pluginName, 'data', 'author-comments.json')
+let loaded: WatchState | undefined
+let running = false
+
+function state() {
+  if (!loaded) loaded = fs.existsSync(file()) ? (JSON.parse(fs.readFileSync(file(), 'utf8')) as WatchState) : emptyWatch()
+  return loaded
+}
+function save() {
+  const filename = file()
+  fs.mkdirSync(path.dirname(filename), { recursive: true })
+  fs.writeFileSync(filename + '.tmp', JSON.stringify(state()), { mode: 0o600 })
+  fs.renameSync(filename + '.tmp', filename)
+}
+function enabled() {
+  return subscriptions(Config.bilibili.push.switch ? (Config.pushlist.bilibili ?? []) : [])
+}
+export function syncCommentSubscriptions() {
+  if (reconcile(state(), enabled(), now())) save()
+}
+
+/** 从现有轮询结果提取本条动态自己的评论区；转发动态不读取 orig。 */
+interface Dynamic {
+  id_str: string
+  type: string
+  basic?: { comment_id_str?: string; comment_type?: number }
+  modules: {
+    module_author: { mid?: string | number; pub_ts: number | string }
+    module_stat?: { comment?: { count?: number } }
+    module_dynamic?: { major?: { draw?: { items?: unknown[] } } }
+  }
+}
+export function observeCommentPosts(items: { host_mid: number; Dynamic_Data: Dynamic }[]) {
+  const active = enabled()
+  const current = now()
+  let changed = reconcile(state(), active, current)
+  for (const { host_mid, Dynamic_Data: d } of items) {
+    const uid = String(host_mid),
+      targets = active.get(uid)
+    if (!targets || d.type === 'DYNAMIC_TYPE_LIVE_RCMD' || String(d.modules.module_author.mid) !== uid) continue
+    const count = d.modules.module_stat?.comment?.count
+    const post = {
+      uid,
+      id: d.id_str,
+      oid: d.basic?.comment_id_str ?? '',
+      type: Number(d.basic?.comment_type),
+      published: Number(d.modules.module_author.pub_ts),
+      imageCount: d.modules.module_dynamic?.major?.draw?.items?.length ?? 0,
+      count: typeof count === 'number' ? count : undefined
+    }
+    if (discover(state(), post, targets, current)) changed = true
+  }
+  if (changed) save()
+}
+
+async function readPage<T>(endpoint: string, params: Record<string, string | number>) {
+  const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))
+  const res = await getAmagiClient().bilibili.request.get<{ code: number; data: T }>(
+    'https://api.bilibili.com/x/v2/reply/' + endpoint + '?' + query,
+    { timeout: 8000, amagi: { cookie: false } }
+  )
+  if (!res.success) throw new AmagiError(res)
+  if (res.data?.code !== 0 || !res.data.data) throw Object.assign(new Error('评论分页响应无效'), { code: res.data?.code })
+  return res.data.data
+}
+export const commentPages = {
+  async roots(p: FeedPost, cursor: string) {
+    const data = await readPage<{
+      replies?: CommentReply[]
+      top?: { upper?: CommentReply }
+      top_replies?: CommentReply[]
+      cursor: { is_end: boolean; mode: number; pagination_reply?: { next_offset?: string } }
+    }>('main', { type: p.type, oid: p.oid, mode: 2, pagination_str: JSON.stringify({ offset: cursor }) })
+    if (!data.cursor) throw new Error('评论列表缺少游标')
+    return {
+      rows: data.replies ?? [],
+      pinned: [...(data.top_replies ?? []), ...(data.top?.upper ? [data.top.upper] : [])],
+      next: data.cursor.is_end ? '' : (data.cursor.pagination_reply?.next_offset ?? ''),
+      chronological: data.cursor.mode === 2
+    }
+  },
+  async replies(p: FeedPost, root: string, pn: number) {
+    const data = await readPage<{ replies?: SubReply[]; page: { count: number; size: number } }>('reply', {
+      type: p.type,
+      oid: p.oid,
+      root,
+      pn,
+      ps: 20
+    })
+    if (!Number.isInteger(data.page?.count) || !(data.page?.size > 0)) throw new Error('楼中楼缺少分页信息')
+    return { rows: data.replies ?? [], count: data.page.count, size: data.page.size }
+  }
+}
+export async function runCommentWatch() {
+  if (running) return
+  running = true
+  try {
+    syncCommentSubscriptions()
+    const store = state()
+    // 限制为每分钟最多两个动态，每个动态至多三次分页请求。
+    const posts = Object.values(store.posts).sort((a, b) => a.lastTurn - b.lastTurn)
+    let budget = 2
+    for (const post of posts) {
+      if (now() >= post.published + 86400) continue
+      if (budget > 0 && post.next <= now() && store.cooldown <= now() && !pushCoolingDown('bilibili')) {
+        budget--
+        post.lastTurn = now()
+        try {
+          await scanPost(post, now(), commentPages, save)
+        } catch (error) {
+          const e = error as { kind?: string; code?: number; httpStatus?: number }
+          if (e.kind === 'risk' || [-352, -412, 403, 412, 429].includes(e.code ?? 0) || [403, 412, 429].includes(e.httpStatus ?? 0))
+            store.cooldown = now() + 600
+          post.next = e.code === 12061 ? post.published + 86400 : now() + 300
+          save()
+          logger.warn(`[主播评论] 动态 ${post.id} 检查失败（${e.code ?? e.kind ?? '网络错误'}），保留进度`)
+        }
+      }
+      const allowed = (target: string) =>
+        now() < post.published + 86400 &&
+        (enabled().get(post.uid)?.includes(target) ?? false) &&
+        karin.getAllBotID().includes(target.split(':')[1])
+      await deliverPost<ImageElement[]>(
+        post,
+        {
+          allowed,
+          render: async (p, root, card, target) => {
+            const botId = target.split(':')[1]
+            const url = `https://t.bilibili.com/${p.id}#reply${root}`
+            const image = await Render(
+              { bot: karin.getBot(botId), selfId: botId } as Message,
+              'bilibili/comment',
+              {
+                Type: '动态',
+                CommentLength: String(1 + (card.replies?.length ?? 0)),
+                ImageLength: p.imageCount ?? 0,
+                shareurl: url,
+                share_url: url,
+                Resolution: null,
+                CommentsData: [card]
+              },
+              { singlePage: true }
+            )
+            if (image.length !== 1) throw new Error('评论图未生成')
+            return image
+          },
+          send: async (target, image) => {
+            const [group, bot] = target.split(':')
+            try {
+              return Boolean((await karin.sendMsg(bot, karin.contactGroup(group), image, { retryCount: 0 })).messageId)
+            } catch {
+              return false
+            }
+          }
+        },
+        save
+      ).catch(() => logger.warn(`[主播评论] 动态 ${post.id} 图片投递未完成，下轮重试`))
+    }
+  } finally {
+    running = false
+  }
+}

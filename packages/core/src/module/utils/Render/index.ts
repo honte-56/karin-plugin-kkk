@@ -48,7 +48,8 @@ const renderTemplate = createTemplateRenderer(import.meta.url, {
 export const Render = async <P extends keyof LoadedRegistry>(
   event: Message,
   path: P,
-  data: DataOf<LoadedRegistry[P]>
+  data: DataOf<LoadedRegistry[P]>,
+  options: { singlePage?: boolean } = {}
 ): Promise<ImageElement[]> => {
   const templateType = path.split('/')[0]
 
@@ -108,7 +109,8 @@ export const Render = async <P extends keyof LoadedRegistry>(
   const renderResult = await render.render({
     name: `${Root.pluginName}/${templateType}`,
     file: result.htmlPath,
-    multiPage: Config.app.multiPageRender && event.bot.adapter.protocol !== 'qqbot' ? Config.app.multiPageHeight : false,
+    multiPage:
+      !options.singlePage && Config.app.multiPageRender && event.bot.adapter.protocol !== 'qqbot' ? Config.app.multiPageHeight : false,
     selector: '#container',
     fullPage: false,
     type: 'png',

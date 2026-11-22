@@ -14,9 +14,9 @@ import type { CommentItem, FanCardInfo, FansDetail, SubCommentItem } from '@temp
 import { Config } from '@/module/utils/Config'
 
 /** 一级评论（`data.replies` 的元素） */
-type CommentReply = BilibiliCommentsResponse['data']['replies'][number]
+export type CommentReply = BilibiliCommentsResponse['data']['replies'][number]
 /** 二级评论（楼中楼，`replies` 的元素） */
-type SubReply = NonNullable<CommentReply['replies']>[number]
+export type SubReply = NonNullable<CommentReply['replies']>[number]
 /** 评论正文：一级与楼中楼两支 */
 type CommentContent = CommentReply['content'] | SubReply['content']
 /** 评论作者：一级与楼中楼两支 */
@@ -109,7 +109,7 @@ export const bilibiliComments = (
   return { comments: sortedComments, image_urls }
 }
 
-const buildCommentItem = (
+export const buildCommentItem = (
   reply: CommentReply,
   hostMid: string,
   imageUrls: string[],
@@ -156,7 +156,7 @@ const buildSubReplies = (
     .map((reply) => buildSubCommentItem(reply as SubReply, hostMid, imageUrls))
 }
 
-const buildSubCommentItem = (reply: SubReply, hostMid: string, imageUrls: string[]): SubCommentItem => {
+export const buildSubCommentItem = (reply: SubReply, hostMid: string, imageUrls: string[]): SubCommentItem => {
   const member = reply.member
   const content = reply.content
 

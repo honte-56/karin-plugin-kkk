@@ -38,6 +38,8 @@ export type bilibiliPushItem = {
   remark: string
   /** 推送类型：投稿视频、图文动态、纯文动态、直播动态、转发动态、投稿专栏，默认全部 */
   pushTypes?: BilibiliPushType[]
+  /** 追踪此 UP 新动态发布后 24 小时内的本人留言。 */
+  authorComments?: boolean
   /** 黑名单：命中不推送；白名单：命中才推送 */
   filterMode?: 'blacklist' | 'whitelist'
   /** 指定关键词 */
