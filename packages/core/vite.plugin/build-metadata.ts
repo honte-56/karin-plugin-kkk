@@ -8,6 +8,10 @@ import type { Plugin } from 'vite'
  * @returns Git commit 信息对象
  */
 const getGitCommitInfo = () => {
+  const revision = process.env.KKK_BUILD_COMMIT
+  if (revision && /^[0-9a-f]{40}$/.test(revision)) {
+    return { commitHash: revision, shortCommitHash: revision.slice(0, 8) }
+  }
   try {
     const { execSync } = require('node:child_process')
     // 确保在 git 仓库根目录下执行
