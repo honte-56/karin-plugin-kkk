@@ -28,6 +28,6 @@ type SavedConfig = { config: ConfigType; results: { success: boolean }[]; accoun
 export const saveConfig = async (config: ConfigType): Promise<SavedConfig> => {
   const response = await authClient.post<ApiResponse<SavedConfig>>(`${API_BASE_URL}/config`, config)
   const data = unwrapResponse(response.data, '保存配置失败')
-  if (data.results.some(r => !r.success)) throw new Error('部分配置保存失败，请刷新核对')
+  if (data.results.some((r) => !r.success)) throw new Error('部分配置保存失败，请刷新核对')
   return data
 }

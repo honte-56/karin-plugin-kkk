@@ -93,9 +93,12 @@ const ConfigPanel = ({ device = 'desktop' }: ConfigPanelProps) => {
     if (!config || hasValidationError) return
 
     const nextConfig = config
-    const savePromise = submitConfig(nextConfig).then(result => {
-      setPanelState(current => ({ savedConfig: result.config, config: current.config === nextConfig ? structuredClone(result.config) : current.config }))
-      return result.accountStatus?.join('；') || '配置已保存' 
+    const savePromise = submitConfig(nextConfig).then((result) => {
+      setPanelState((current) => ({
+        savedConfig: result.config,
+        config: current.config === nextConfig ? structuredClone(result.config) : current.config
+      }))
+      return result.accountStatus?.join('；') || '配置已保存'
     })
 
     toast.promise(savePromise, {

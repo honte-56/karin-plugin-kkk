@@ -20,10 +20,15 @@ export async function subscriptionFailed(platform: Platform, uid: string | numbe
   const reason = failure?.code ?? failure?.name ?? '未知错误'
   const detail = `${platformNames[platform]}推送：订阅 ${uid} 失败（${reason}）${cooldown ? '，平台轮询冷却 10 分钟' : ''}。`
   logger.warn(detail)
-  if (!state.notified && !state.pending && Config.app.errorLogSendTo.some(target => target === 'master' || target === 'allMasters')) {
+  if (!state.notified && !state.pending && Config.app.errorLogSendTo.some((target) => target === 'master' || target === 'allMasters')) {
     state.pending = true
-    try { state.notified = await sendOwnerText(detail) } catch { logger.warn('[推送] 主人通知发送失败') }
-    finally { state.pending = false }
+    try {
+      state.notified = await sendOwnerText(detail)
+    } catch {
+      logger.warn('[推送] 主人通知发送失败')
+    } finally {
+      state.pending = false
+    }
   }
   return cooldown
 }
@@ -34,8 +39,12 @@ export async function pushRoundSucceeded(platform: Platform) {
   if (state.notified) {
     state.pending = true
     try {
-      if (!await sendOwnerText(`${platformNames[platform]}推送轮询已连续完成 3 轮，此前累计 ${state.failures} 次订阅错误。`)) return
-    } catch { return } finally { state.pending = false }
+      if (!(await sendOwnerText(`${platformNames[platform]}推送轮询已连续完成 3 轮，此前累计 ${state.failures} 次订阅错误。`))) return
+    } catch {
+      return
+    } finally {
+      state.pending = false
+    }
   }
   incidents.delete(platform)
 }

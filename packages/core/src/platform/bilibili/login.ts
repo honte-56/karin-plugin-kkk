@@ -1,10 +1,10 @@
-import { loginReceipt } from '@/module/utils/accountHealth'
 import fs from 'node:fs'
 
 import type { AmagiError, Qrcode } from '@ikenxuan/amagi'
 import { type Message } from 'node-karin'
 
 import { Common, Render } from '@/module/utils'
+import { loginReceipt } from '@/module/utils/accountHealth'
 import { getAmagiClient, reloadAmagiConfig } from '@/module/utils/amagiClient'
 import { resolveTriggerAvatarUrl } from '@/module/utils/bot'
 import { Config } from '@/module/utils/Config'
@@ -123,7 +123,11 @@ export const bilibiliLogin = async (e: Message) => {
 
       onSuccess: async (credential) => {
         const refreshToken = readRefreshToken(credential.raw) ?? ''
-        await Config.Modify('amagi', 'cookies', { ...Config.amagi.cookies, bilibili: credential.cookie, bilibiliRefreshToken: refreshToken })
+        await Config.Modify('amagi', 'cookies', {
+          ...Config.amagi.cookies,
+          bilibili: credential.cookie,
+          bilibiliRefreshToken: refreshToken
+        })
         const reloaded = reloadAmagiConfig()
         logger.mark(`[B站登录] 登录凭证已保存，Amagi Client ${reloaded ? '已重载' : '配置未变化'}`)
       }
@@ -178,7 +182,11 @@ export const bilibiliRefreshLogin = async (e: Message): Promise<boolean> => {
     await e.reply('续期期间登录凭据已变更，保留最新凭据。', { reply: true })
     return true
   }
-  await Config.Modify('amagi', 'cookies', { ...Config.amagi.cookies, bilibili: result.credential.cookie, bilibiliRefreshToken: result.credential.refreshToken })
+  await Config.Modify('amagi', 'cookies', {
+    ...Config.amagi.cookies,
+    bilibili: result.credential.cookie,
+    bilibiliRefreshToken: result.credential.refreshToken
+  })
   const reloaded = reloadAmagiConfig()
   logger.mark(`[B站续期] 新 cookie 与 refresh_token 已保存，Amagi Client ${reloaded ? '已重载' : '配置未变化'}`)
   await e.reply(await loginReceipt('bilibili'), { reply: true })

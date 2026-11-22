@@ -1,4 +1,4 @@
-import karin, { config, segment, type SendMessage } from 'node-karin'
+import karin, { config, segment, type ImageElement, type TextElement } from 'node-karin'
 
 import { logger } from '@/module/utils/logger'
 
@@ -16,7 +16,7 @@ import { isPushTask } from './utils'
  * @remarks
  * 仅当配置 `errorLogSendTo` 包含 `'trigger'` 且存在 event 时发送
  */
-export const sendErrorToTrigger = async (ctx: ErrorContext, img: SendMessage) => {
+export const sendErrorToTrigger = async (ctx: ErrorContext, img: Array<ImageElement | TextElement>) => {
   const { event, options } = ctx
 
   if (!event) return
@@ -47,7 +47,7 @@ export const sendErrorToTrigger = async (ctx: ErrorContext, img: SendMessage) =>
  * await sendErrorToMaster(ctx, img, '自定义前缀消息')
  * ```
  */
-export const sendErrorToMaster = async (ctx: ErrorContext, img: SendMessage, customPrefix?: string) => {
+export const sendErrorToMaster = async (ctx: ErrorContext, img: Array<ImageElement | TextElement>, customPrefix?: string) => {
   const { options, event } = ctx
 
   if (!Config.app.errorLogSendTo.some((item) => item === 'master')) return
@@ -82,11 +82,7 @@ export const sendErrorToMaster = async (ctx: ErrorContext, img: SendMessage, cus
  * await sendErrorToAllMasters(ctx, img)
  * ```
  */
-export const sendErrorToAllMasters = async (
-  ctx: ErrorContext,
-  img: SendMessage,
-  customPrefix?: string
-) => {
+export const sendErrorToAllMasters = async (ctx: ErrorContext, img: Array<ImageElement | TextElement>, customPrefix?: string) => {
   const { options, event } = ctx
 
   if (!Config.app.errorLogSendTo.some((item) => item === 'allMasters')) return
