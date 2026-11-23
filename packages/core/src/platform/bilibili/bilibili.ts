@@ -55,6 +55,7 @@ import { BilibiliDataTypes } from '@/types'
 
 import { createBilibiliCdnTools, streamUrls, type BilibiliStream } from './cdn'
 import { selectBilibiliStreamUrl } from './cdn-selector'
+import { decorationImage } from './decoration-image'
 
 let img: ElementTypes[]
 type videoDownloadUrlList = BilibiliVideoStreamResponse['data']['dash']['video']
@@ -607,7 +608,7 @@ export class Bilibili extends Base {
                 user_shortid: dynamicInfo.data.data.item.modules.module_author.mid,
                 total_favorited: Count(userProfileData.data.data.like_num),
                 following_count: Count(userProfileData.data.data.card.attention),
-                decoration_card: generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
+                decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
                 render_time: TimeFormatter.now(),
                 dynamicTYPE: '图文动态解析',
                 imageLayout: Config.bilibili.imageLayout,
@@ -649,7 +650,7 @@ export class Bilibili extends Base {
                 user_shortid: dynamicInfo.data.data.item.modules.module_author.mid,
                 total_favorited: Count(userProfileData.data.data.like_num),
                 following_count: Count(userProfileData.data.data.card.attention),
-                decoration_card: generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
+                decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
                 render_time: TimeFormatter.now(),
                 dynamicTYPE: '纯文动态解析',
                 additional: parseAdditionalCard(dynamicInfo.data.data.item.modules.module_dynamic.additional),
@@ -682,7 +683,7 @@ export class Bilibili extends Base {
                     play: dynamicInfo.data.data.item.orig.modules.module_dynamic.major.archive.stat.play,
                     cover: dynamicInfo.data.data.item.orig.modules.module_dynamic.major.archive.cover,
                     create_time: TimeFormatter.toDateTime(dynamicInfo.data.data.item.orig.modules.module_author.pub_ts),
-                    decoration_card: generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
+                    decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
                     frame: dynamicInfo.data.data.item.orig.modules.module_author.pendant.image
                   }
                 }
@@ -729,7 +730,7 @@ export class Bilibili extends Base {
                     image_url: Object.values(dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.pics)
                       .filter((item): item is { url: string } => typeof (item as { url?: unknown })?.url === 'string')
                       .map((item) => ({ image_src: item.url })),
-                    decoration_card: generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
+                    decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
                     frame: dynamicInfo.data.data.item.orig.modules.module_author.pendant.image
                   }
                 }
@@ -758,7 +759,7 @@ export class Bilibili extends Base {
                       dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.summary.text,
                       dynamicInfo.data.data.item.orig.modules.module_dynamic.major.opus.summary.rich_text_nodes
                     ),
-                    decoration_card: generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
+                    decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
                     frame: dynamicInfo.data.data.item.orig.modules.module_author.pendant.image,
                     additional: parseAdditionalCard(dynamicInfo.data.data.item.orig.modules.module_dynamic.additional)
                   }
@@ -773,7 +774,7 @@ export class Bilibili extends Base {
                     usernameMeta: getUsernameMetadata(dynamicInfo.data.data.item.orig.modules.module_author),
                     create_time: TimeFormatter.toDateTime(dynamicInfo.data.data.item.orig.modules.module_author.pub_ts),
                     avatar_url: dynamicInfo.data.data.item.orig.modules.module_author.face,
-                    decoration_card: generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
+                    decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.orig.modules.module_author.decoration_card),
                     frame: dynamicInfo.data.data.item.orig.modules.module_author.pendant.image,
                     cover: liveData.live_play_info.cover,
                     text_large: liveData.live_play_info.watched_show.text_large,
@@ -809,7 +810,7 @@ export class Bilibili extends Base {
                 total_favorited: Count(userProfileData.data.data.like_num),
                 following_count: Count(userProfileData.data.data.card.attention),
                 dynamicTYPE: '转发动态解析',
-                decoration_card: generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
+                decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
                 render_time: TimeFormatter.now(),
                 original_content,
                 dynamic_id: dynamicInfo.data.data.item.id_str
@@ -881,7 +882,7 @@ export class Bilibili extends Base {
                 user_shortid: userProfileData.data.data.card.mid,
                 total_favorited: Count(userProfileData.data.data.like_num),
                 following_count: Count(userProfileData.data.data.card.attention),
-                decoration_card: generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
+                decoration_card: await generateDecorationCard(dynamicInfo.data.data.item.modules.module_author.decoration_card),
                 render_time: TimeFormatter.now(),
                 dynamicTYPE: '视频动态解析',
                 dynamic_id: dynamicInfo.data.data.item.id_str,
@@ -1409,12 +1410,14 @@ export const cover = (pic: { img_src: string }[]) => {
  * @param decorate 装饰对象，包含卡片的URL和颜色信息
  * @returns 返回装饰卡片数据对象或undefined
  */
-export const generateDecorationCard = (
+export const generateDecorationCard = async (
   decorate: DynamicTypeDraw['data']['item']['modules']['module_author']['decoration_card']
-): DecorationCardData | undefined => {
-  if (!decorate) return undefined
+): Promise<DecorationCardData | undefined> => {
+  if (!decorate?.card_url) return undefined
+  const image = await decorationImage(decorate.card_url)
+  if (!image) return undefined
   return {
-    card_url: decorate.card_url,
+    card_url: image,
     colors: decorate.fan?.color_format?.colors || [],
     text: decorate.fan?.num_str || decorate.fan?.num_desc || ''
   }

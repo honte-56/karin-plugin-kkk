@@ -116,13 +116,6 @@ export const EnhancedImage: React.FC<EnhancedImageProps> = ({ src, alt, classNam
 }
 
 /**
- * 代理图片 URL，绕过 B 站防盗链
- */
-const proxyImageUrl = (url: string): string => {
-  return `https://images.weserv.nl/?url=${encodeURIComponent(url)}`
-}
-
-/**
  * 装饰卡片组件
  * 接收 JSON 数据并用 React 元素渲染
  */
@@ -141,7 +134,7 @@ export const DecorationCard: React.FC<{ data: DecorationCardData | undefined }> 
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
         backgroundSize: 'contain',
-        backgroundImage: `url('${proxyImageUrl(data.card_url)}')`
+        backgroundImage: `url(${JSON.stringify(data.card_url)})`
       }}
     >
       {gradientStyle && data.text && (

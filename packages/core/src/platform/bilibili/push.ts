@@ -422,7 +422,7 @@ export class Bilibilipush extends Base {
               user_shortid: data[dynamicId].host_mid,
               total_favorited: Count(userINFO.data.data.like_num),
               following_count: Count(userINFO.data.data.card.attention),
-              decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
+              decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
               render_time: TimeFormatter.now(),
               imageLayout: Config.bilibili.imageLayout,
               additional: parseAdditionalCard(data[dynamicId].Dynamic_Data.modules.module_dynamic.additional),
@@ -470,7 +470,7 @@ export class Bilibilipush extends Base {
               user_shortid: data[dynamicId].host_mid,
               total_favorited: Count(userINFO.data.data.like_num),
               following_count: Count(userINFO.data.data.card.attention),
-              decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
+              decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
               render_time: TimeFormatter.now(),
               additional: parseAdditionalCard(data[dynamicId].Dynamic_Data.modules.module_dynamic.additional),
               dynamicTYPE: '纯文动态推送',
@@ -605,7 +605,7 @@ export class Bilibilipush extends Base {
                     play: data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major.archive?.stat.play,
                     cover: data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major.archive?.cover,
                     create_time: TimeFormatter.toDateTime(data[dynamicId].Dynamic_Data.orig.modules.module_author.pub_ts),
-                    decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
+                    decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
                     frame: data[dynamicId].Dynamic_Data.orig.modules.module_author.pendant.image
                   }
                 }
@@ -650,7 +650,7 @@ export class Bilibilipush extends Base {
                     image_url: Object.values(data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major.opus.pics)
                       .filter((item): item is { url: string } => typeof item?.url === 'string')
                       .map((item) => ({ image_src: item.url })),
-                    decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
+                    decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
                     frame: data[dynamicId].Dynamic_Data.orig.modules.module_author.pendant.image
                   }
                 }
@@ -683,7 +683,7 @@ export class Bilibilipush extends Base {
                       data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major.opus.summary.text,
                       data[dynamicId].Dynamic_Data.orig.modules.module_dynamic.major.opus.summary.rich_text_nodes
                     ),
-                    decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
+                    decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
                     frame: data[dynamicId].Dynamic_Data.orig.modules.module_author.pendant.image
                   }
                 }
@@ -696,7 +696,7 @@ export class Bilibilipush extends Base {
                     usernameMeta: getUsernameMetadata(data[dynamicId].Dynamic_Data.orig.modules.module_author),
                     create_time: TimeFormatter.toDateTime(data[dynamicId].Dynamic_Data.orig.modules.module_author.pub_ts),
                     avatar_url: data[dynamicId].Dynamic_Data.orig.modules.module_author.face,
-                    decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
+                    decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.orig.modules.module_author.decorate_card),
                     frame: data[dynamicId].Dynamic_Data.orig.modules.module_author.pendant.image,
                     cover: liveData.live_play_info.cover,
                     text_large: liveData.live_play_info.watched_show.text_large,
@@ -730,7 +730,7 @@ export class Bilibilipush extends Base {
               total_favorited: Count(userINFO.data.data.like_num),
               following_count: Count(userINFO.data.data.card.attention),
               dynamicTYPE: '转发动态推送',
-              decoration_card: generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
+              decoration_card: await generateDecorationCard(data[dynamicId].Dynamic_Data.modules.module_author.decorate_card),
               render_time: TimeFormatter.now(),
               original_content,
               imgList: imgList.length > 0 ? imgList : null,
