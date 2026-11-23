@@ -21,6 +21,8 @@ export interface FanCardInfo {
  * B站二级评论项数据接口
  */
 export interface SubCommentItem {
+  commentId?: string
+  parentId?: string
   /** 用户头像URL */
   avatar: string
   /** 用户昵称 */
@@ -97,6 +99,8 @@ export interface FansDetail {
  * B站评论项数据接口
  */
 export interface CommentItem {
+  /** 接口自带的楼中楼预览，仅作为上下文，不触发投递 */
+  previewReplies?: SubCommentItem[]
   /** 用户头像URL */
   avatar: string
   /** 用户昵称 */

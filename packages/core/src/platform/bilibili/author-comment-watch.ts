@@ -1,3 +1,4 @@
+import type { PostExcerpt } from '@template/template/bilibili/authorComment/components/types'
 import type { CommentItem, SubCommentItem } from '@template/template/bilibili/components/types'
 
 import type { bilibiliPushItem } from '@/types/config/pushlist'
@@ -21,6 +22,7 @@ export interface FeedPost {
   oid: string
   type: number
   published: number
+  excerpt?: PostExcerpt
   imageCount?: number
   count?: number
 }
@@ -75,14 +77,15 @@ export function discover(state: WatchState, feed: FeedPost, targets: string[], n
     !validId(feed.oid) ||
     !(feed.type > 0) ||
     !Number.isFinite(feed.published) ||
-    feed.published < start ||
+    (!state.posts[feed.id] && feed.published < start) ||
     now >= feed.published + DAY ||
     feed.published > now + 60
   )
     return false
   const post = state.posts[feed.id]
   if (post) {
-    if (post.count === feed.count) return false
+    if (post.count === feed.count && (post.excerpt || !feed.excerpt)) return false
+    if (feed.excerpt) post.excerpt = feed.excerpt
     post.count = feed.count
   } else {
     state.posts[feed.id] = {
@@ -123,7 +126,7 @@ const authored = (r: CommentReply | SubReply, uid: string) => String(r.mid_str |
 function rememberChild(post: WatchedPost, root: string, thread: Thread, row: SubReply) {
   const id = idOf(row)
   if (!id || !row.member || !row.content || row.invisible || !authored(row, post.uid) || String(row.root_str || row.root) !== root) return
-  thread.children[id] = { ...buildSubCommentItem(row, post.uid, []), isUP: true }
+  thread.children[id] = { ...buildSubCommentItem(row, post.uid, []), isUP: true, commentId: id, parentId: row.parent_str }
 }
 
 function rememberRoot(post: WatchedPost, row: CommentReply, pinned: boolean) {
@@ -132,8 +135,26 @@ function rememberRoot(post: WatchedPost, row: CommentReply, pinned: boolean) {
   const own = authored(row, post.uid)
   const preview: SubReply[] = row.replies ?? []
   if (!own && !row.up_action?.reply && !preview.some((r) => authored(r, post.uid)) && !post.threads[id]) return
-  const card = { ...buildCommentItem({ ...row, replies: [] }, post.uid, [], { id: 0, isTop: pinned }), isUP: own }
+  const card: CommentItem = { ...buildCommentItem({ ...row, replies: [] }, post.uid, [], { id: 0, isTop: pinned }), isUP: own }
   const thread = (post.threads[id] ??= { card, children: {}, page: 0, high: 0, through: 0, checked: 0 })
+  const seen = new Set<string>()
+  card.previewReplies = preview
+    .filter((child) => {
+      const id = idOf(child)
+      if (
+        !id ||
+        seen.has(id) ||
+        child.invisible ||
+        !child.content ||
+        !child.member ||
+        String(child.root_str || child.root) !== row.rpid_str
+      )
+        return false
+      seen.add(id)
+      return true
+    })
+    .slice(0, 3)
+    .map((child) => ({ ...buildSubCommentItem(child, post.uid, []), commentId: idOf(child), isUP: authored(child, post.uid) }))
   thread.card = card
   for (const child of preview) rememberChild(post, id, thread, child)
   // 预览已经覆盖整楼，就无需再请求楼中楼接口。
@@ -252,7 +273,9 @@ export async function deliverPost<Image>(post: WatchedPost, io: DeliveryIO<Image
       const signature = children.map(([id]) => id).join(',')
       let image = rendered.get(signature)
       if (!image) {
-        image = await io.render(post, root, { ...t.card, replies: children.map(([, c]) => c) }, target, signature)
+        const newIds = new Set(children.map(([id]) => id))
+        const previewReplies = t.card.previewReplies?.filter((reply) => !reply.commentId || !newIds.has(reply.commentId))
+        image = await io.render(post, root, { ...t.card, previewReplies, replies: children.map(([, c]) => c) }, target, signature)
         rendered.set(signature, image)
       }
       if (io.allowed(target) && (await io.send(target, image))) {

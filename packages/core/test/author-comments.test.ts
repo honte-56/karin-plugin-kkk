@@ -66,7 +66,12 @@ describe('主播评论和楼中楼', () => {
     await tick(start + 240)
     expect(io.replies).not.toHaveBeenCalled()
     expect(delivery.render).toHaveBeenCalledTimes(1)
-    expect(delivery.send.mock.calls[0][1]).toMatchObject({ isUP: mid === uid, replies: [{ isUP: true }] })
+    expect(delivery.send.mock.calls[0][1]).toMatchObject({
+      isUP: mid === uid,
+      replies: [{ isUP: true, commentId: '101' }],
+      previewReplies: [{ isUP: false, commentId: '102' }],
+      replylength: 203
+    })
   })
   it('先发主评论，后发带主评论的回复；失败群重启后补发，已成功的群不重发', async () => {
     const { post, io, delivery, tick, save } = setup()

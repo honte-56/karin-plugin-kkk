@@ -1,3 +1,4 @@
+@import './bilibili/authorComment/components/poster.css';
 @import 'tailwindcss';
 @import '@karinjs/template-react/styles';
 @import 'highlight.js/styles/github.css';

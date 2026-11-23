@@ -21,6 +21,7 @@ import {
   type WatchState
 } from './author-comment-watch'
 import type { CommentReply, SubReply } from './comments'
+import { postExcerpt } from './post-excerpt'
 
 const now = () => Math.floor(Date.now() / 1000)
 const file = () => path.join(karinPathBase, Root.pluginName, 'data', 'author-comments.json')
@@ -51,7 +52,8 @@ interface Dynamic {
   id_str: string
   type: string
   basic?: { comment_id_str?: string; comment_type?: number }
-  modules: {
+  orig?: { modules?: Parameters<typeof postExcerpt>[0] } | null
+  modules: Parameters<typeof postExcerpt>[0] & {
     module_author: { mid?: string | number; pub_ts: number | string }
     module_stat?: { comment?: { count?: number } }
     module_dynamic?: { major?: { draw?: { items?: unknown[] } } }
@@ -72,6 +74,7 @@ export function observeCommentPosts(items: { host_mid: number; Dynamic_Data: Dyn
       oid: d.basic?.comment_id_str ?? '',
       type: Number(d.basic?.comment_type),
       published: Number(d.modules.module_author.pub_ts),
+      excerpt: postExcerpt(d.modules, d.orig?.modules),
       imageCount: d.modules.module_dynamic?.major?.draw?.items?.length ?? 0,
       count: typeof count === 'number' ? count : undefined
     }
@@ -160,16 +163,8 @@ export async function runCommentWatch() {
             const url = `https://t.bilibili.com/${p.id}#reply${root}`
             const image = await Render(
               { bot: karin.getBot(botId), selfId: botId } as Message,
-              'bilibili/comment',
-              {
-                Type: '动态',
-                CommentLength: String(1 + (card.replies?.length ?? 0)),
-                ImageLength: p.imageCount ?? 0,
-                shareurl: url,
-                share_url: url,
-                Resolution: null,
-                CommentsData: [card]
-              },
+              'bilibili/authorComment',
+              { card, post: p.excerpt, published: p.published, share_url: url },
               { singlePage: true }
             )
             if (image.length !== 1) throw new Error('评论图未生成')
