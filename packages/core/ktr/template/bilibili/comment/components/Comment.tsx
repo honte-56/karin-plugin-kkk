@@ -285,7 +285,7 @@ const VideoInfoHeader: React.FC<Omit<BilibiliCommentData, 'CommentsData'> & { us
  * @param props 组件属性
  * @returns JSX元素
  */
-const CommentItemComponent: React.FC<BilibiliCommentData['CommentsData'][number] & { isLast?: boolean }> = ({
+export const CommentItemComponent: React.FC<BilibiliCommentData['CommentsData'][number] & { isLast?: boolean }> = ({
   isLast = false,
   ...props
 }) => {

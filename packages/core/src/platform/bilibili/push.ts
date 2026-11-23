@@ -8,6 +8,7 @@ import {
   DynamicType,
   MajorType
 } from '@ikenxuan/amagi'
+import type { DataOf, LoadedRegistry } from '@karinjs/template-react'
 import type { BilibiliForwardOriginalContentProps } from '@template/template/bilibili/dynamic/types'
 import type { BilibiliUserListData } from '@template/template/bilibili/userlist/components/types'
 import type { AdapterType, ImageElement, Message, SendMsgResults } from 'node-karin'
@@ -54,6 +55,8 @@ import {
 } from '@/platform/bilibili/dynamic-text'
 import { buildBilibiliLiveSessionId, parseBilibiliLiveStartedAt } from '@/platform/bilibili/live-status'
 import type { bilibiliPushItem, BilibiliPushType } from '@/types/config/pushlist'
+
+import type { OriginalRoute } from './original-dynamic'
 
 /** BilibiliPushType 到 DynamicType 的映射 */
 const pushTypeToDynamicType: Record<BilibiliPushType, DynamicType> = {
@@ -379,6 +382,16 @@ export class Bilibilipush extends Base {
       } | null = null
       this.injectBotToEventForRender(data[dynamicId].targets)
 
+      const renderOriginal = async <P extends OriginalRoute>(route: P, payload: DataOf<LoadedRegistry[P]>) => {
+        try {
+          const { rememberOriginal } = await import('./author-comments')
+          rememberOriginal(dynamicId, route, payload)
+        } catch {
+          logger.warn('[主播评论] 原动态渲染数据未保存')
+        }
+        return Render(this.e, route, payload)
+      }
+
       if (!skip) {
         const userINFO = await this.amagi.bilibili.fetcher.fetchUserCard({
           host_mid: data[dynamicId].host_mid
@@ -401,7 +414,7 @@ export class Bilibilipush extends Base {
               data[dynamicId].Dynamic_Data.modules.module_dynamic.major!.opus.summary.text =
                 `${name}\n\n` + data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.summary?.text
             }
-            img = await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_DRAW', {
+            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_DRAW', {
               image_url: Object.values(data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.pics ?? [])
                 .filter((item): item is { url: string } => typeof item?.url === 'string')
                 .map((item) => ({ image_src: item.url })),
@@ -456,7 +469,7 @@ export class Bilibilipush extends Base {
               data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.summary?.rich_text_nodes ?? []
             )
 
-            img = await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_WORD', {
+            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_WORD', {
               text,
               dianzan: Count(data[dynamicId].Dynamic_Data.modules.module_stat.like.count),
               pinglun: Count(data[dynamicId].Dynamic_Data.modules.module_stat.comment.count),
@@ -529,7 +542,7 @@ export class Bilibilipush extends Base {
                 data[dynamicId].Dynamic_Data.modules.module_dynamic.desc?.rich_text_nodes ?? []
               )
 
-              img = await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_AV', {
+              img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_AV', {
                 image_url: INFODATA.data.data.pic,
                 text: buildBilibiliDynamicRichText(INFODATA.data.data.title, []),
                 desc: INFODATA.data.data.desc_v2?.length
@@ -715,7 +728,7 @@ export class Bilibilipush extends Base {
                 break
               }
             }
-            img = await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_FORWARD', {
+            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_FORWARD', {
               text,
               dianzan: Count(data[dynamicId].Dynamic_Data.modules.module_stat.like.count),
               pinglun: Count(data[dynamicId].Dynamic_Data.modules.module_stat.comment.count),
@@ -768,7 +781,7 @@ export class Bilibilipush extends Base {
             }
 
             // 构建渲染数据
-            img = await Render(this.e, 'bilibili/dynamic/DYNAMIC_TYPE_ARTICLE', {
+            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_ARTICLE', {
               // 用户信息
               usernameMeta: getUsernameMetadata(data[dynamicId].Dynamic_Data.modules.module_author),
               avatar_url: data[dynamicId].Dynamic_Data.modules.module_author.face,

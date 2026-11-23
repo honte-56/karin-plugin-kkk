@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import type { DataOf, LoadedRegistry } from '@karinjs/template-react'
 import karin, { logger, type ImageElement, type Message } from 'node-karin'
 import { karinPathBase } from 'node-karin/root'
 
@@ -21,6 +22,7 @@ import {
   type WatchState
 } from './author-comment-watch'
 import type { CommentReply, SubReply } from './comments'
+import { originalForComment, type OriginalRoute } from './original-dynamic'
 import { postExcerpt } from './post-excerpt'
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -45,6 +47,15 @@ function enabled() {
 }
 export function syncCommentSubscriptions() {
   if (reconcile(state(), enabled(), now())) save()
+}
+
+/** 保存这条动态实际使用的模板和入参，评论推送直接重用。 */
+export function rememberOriginal<P extends OriginalRoute>(id: string, route: P, data: DataOf<LoadedRegistry[P]>) {
+  const post = state().posts[id]
+  if (post && !post.original) {
+    post.original = { route, data }
+    save()
+  }
 }
 
 /** 从现有轮询结果提取本条动态自己的评论区；转发动态不读取 orig。 */
@@ -161,10 +172,16 @@ export async function runCommentWatch() {
             if (cached) return cached.image
             const botId = target.split(':')[1]
             const url = `https://t.bilibili.com/${p.id}#reply${root}`
+            const original = originalForComment(p, card)
             const image = await Render(
               { bot: karin.getBot(botId), selfId: botId } as Message,
-              'bilibili/authorComment',
-              { card, post: p.excerpt, published: p.published, share_url: url },
+              original.route,
+              {
+                ...original.data,
+                authorComment: card,
+                render_time: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }),
+                share_url: url
+              },
               { singlePage: true }
             )
             if (image.length !== 1) throw new Error('评论图未生成')

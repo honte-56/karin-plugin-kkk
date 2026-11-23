@@ -1,12 +1,14 @@
 /** 本模板的数据类型（路由 index.tsx 与 components/ 实现共用）。 */
 import type { RichTextDocument } from '@kkk/richtext'
 
+import type { CommentItem } from '../../../components/types'
 import type { DecorationCardData, UsernameMetadata } from '../../types'
 
 /**
  * B站专栏动态组件属性接口
  */
 export interface BilibiliArticleDynamicData {
+  authorComment?: CommentItem
   /** 用户头像URL */
   avatar_url: string
   /** 头像框 */

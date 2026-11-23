@@ -1,9 +1,10 @@
-import type { PostExcerpt } from '@template/template/bilibili/authorComment/components/types'
 import type { CommentItem, SubCommentItem } from '@template/template/bilibili/components/types'
 
 import type { bilibiliPushItem } from '@/types/config/pushlist'
 
 import { buildCommentItem, buildSubCommentItem, type CommentReply, type SubReply } from './comments'
+import type { OriginalDynamic } from './original-dynamic'
+import type { PostExcerpt } from './post-excerpt'
 
 const HOUR = 3600
 const DAY = 24 * HOUR
@@ -22,6 +23,7 @@ export interface FeedPost {
   oid: string
   type: number
   published: number
+  original?: OriginalDynamic
   excerpt?: PostExcerpt
   imageCount?: number
   count?: number
@@ -273,9 +275,10 @@ export async function deliverPost<Image>(post: WatchedPost, io: DeliveryIO<Image
       const signature = children.map(([id]) => id).join(',')
       let image = rendered.get(signature)
       if (!image) {
-        const newIds = new Set(children.map(([id]) => id))
-        const previewReplies = t.card.previewReplies?.filter((reply) => !reply.commentId || !newIds.has(reply.commentId))
-        image = await io.render(post, root, { ...t.card, previewReplies, replies: children.map(([, c]) => c) }, target, signature)
+        const preview = t.card.previewReplies ?? []
+        const previewIds = new Set(preview.map((reply) => reply.commentId))
+        const replies = [...preview, ...children.filter(([id]) => !previewIds.has(id)).map(([, reply]) => reply)]
+        image = await io.render(post, root, { ...t.card, replies }, target, signature)
         rendered.set(signature, image)
       }
       if (io.allowed(target) && (await io.send(target, image))) {

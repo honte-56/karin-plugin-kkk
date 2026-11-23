@@ -1,5 +1,7 @@
-/** bilibili dynamic 板块共享类型（跨模板复用 / core 引用）。 */
 import type { RichTextDocument } from '@kkk/richtext'
+
+/** bilibili dynamic 板块共享类型（跨模板复用 / core 引用）。 */
+import type { CommentItem } from '../components/types'
 
 /**
  * 装饰卡片数据
@@ -29,6 +31,7 @@ export interface UsernameMetadata {
  * B站动态基础数据接口（所有动态类型共有的字段）
  */
 export interface BilibiliDynamicBaseData {
+  authorComment?: CommentItem
   /** 用户头像URL */
   avatar_url: string
   /** 头像框 */

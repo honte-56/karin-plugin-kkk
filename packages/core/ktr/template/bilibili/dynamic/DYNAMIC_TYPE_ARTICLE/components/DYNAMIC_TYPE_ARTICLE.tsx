@@ -6,6 +6,7 @@ import { isDark } from '../../../../../utils/theme'
 import { DefaultLayout } from '../../../../components/DefaultLayout'
 import { QRCodeWithAvatar } from '../../../../components/QRCodeWithAvatar'
 import type { PosterProps } from '../../../../types/ctx'
+import { CommentItemComponent } from '../../../comment/components/Comment'
 import { CommentIcon, ShareIcon, ThumbUpIcon } from '../../../components/Icons'
 import { CommentText, DecorationCard, EnhancedImage, UsernameDisplay } from '../../../components/shared'
 import type { BilibiliArticleDynamicData } from './types'
@@ -235,6 +236,7 @@ export const BilibiliArticleDynamic: React.FC<PosterProps<BilibiliArticleDynamic
 
         {/* 互动状态 */}
         <BilibiliArticleStatus {...props} />
+        {props.data.authorComment && <CommentItemComponent {...props.data.authorComment} isLast />}
 
         {/* 间距 */}
         <div className="h-23" />

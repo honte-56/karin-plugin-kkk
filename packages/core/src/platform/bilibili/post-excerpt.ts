@@ -1,6 +1,17 @@
-import type { PostExcerpt } from '@template/template/bilibili/authorComment/components/types'
+import type { RichTextDocument } from '@kkk/richtext'
 
 import { buildBilibiliDynamicRichText } from './dynamic-text'
+
+/** 监听动态时保存的公开上下文。旧监听记录可能只有动态链接。 */
+export interface PostExcerpt {
+  author: string
+  text: RichTextDocument
+  title?: string
+  pictures: string[]
+  pictureCount: number
+  reserved?: { title: string; when: string; detail: string }
+  quoted?: string
+}
 
 type Text = { text?: string; rich_text_nodes?: Parameters<typeof buildBilibiliDynamicRichText>[1] }
 interface ExcerptModules {

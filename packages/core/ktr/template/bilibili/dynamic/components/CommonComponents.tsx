@@ -3,6 +3,7 @@ import { Link } from 'lucide-react'
 import React from 'react'
 
 import { QRCodeWithAvatar } from '../../../components/QRCodeWithAvatar'
+import { CommentItemComponent } from '../../comment/components/Comment'
 import { CommentIcon, ShareIcon, ThumbUpIcon, ViewIcon } from '../../components/Icons'
 import { DecorationCard, EnhancedImage, UsernameDisplay } from '../../components/shared'
 import type { BilibiliDynamicBaseData, BilibiliDynamicFooterProps } from '../types'
@@ -59,6 +60,11 @@ export const BilibiliDynamicStatus: React.FC<BilibiliDynamicBaseData> = (props) 
           {props.share}分享
         </div>
       </div>
+      {props.authorComment && (
+        <div className="-mx-18">
+          <CommentItemComponent {...props.authorComment} isLast />
+        </div>
+      )}
       <div className="flex gap-2 items-center text-5xl font-light tracking-normal select-text text-foreground/70">
         <ClockIcon size={52} weight="fill" />
         图片生成于: {props.render_time}

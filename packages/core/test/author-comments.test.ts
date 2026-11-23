@@ -68,8 +68,10 @@ describe('主播评论和楼中楼', () => {
     expect(delivery.render).toHaveBeenCalledTimes(1)
     expect(delivery.send.mock.calls[0][1]).toMatchObject({
       isUP: mid === uid,
-      replies: [{ isUP: true, commentId: '101' }],
-      previewReplies: [{ isUP: false, commentId: '102' }],
+      replies: [
+        { isUP: true, commentId: '101' },
+        { isUP: false, commentId: '102' }
+      ],
       replylength: 203
     })
   })
