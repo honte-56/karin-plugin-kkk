@@ -56,6 +56,8 @@ import {
 import { buildBilibiliLiveSessionId, parseBilibiliLiveStartedAt } from '@/platform/bilibili/live-status'
 import type { bilibiliPushItem, BilibiliPushType } from '@/types/config/pushlist'
 
+import { firstImageForTargets } from './author-comment-watch'
+import type { firstCommentForDynamic } from './author-comments'
 import type { OriginalRoute } from './original-dynamic'
 
 /** BilibiliPushType 到 DynamicType 的映射 */
@@ -111,6 +113,8 @@ const bilibiliBaseHeaders: downLoadFileOptions['headers'] = {
   Referer: 'https://www.bilibili.com',
   Cookie: Config.amagi.cookies.bilibili
 }
+
+const dispatching = new Set<string>()
 
 export class Bilibilipush extends Base {
   private force = false
@@ -197,14 +201,14 @@ export class Bilibilipush extends Base {
         logger.warn('[主播评论] 保存监听动态失败，稍后重试')
       }
     }
-    const pushdata = await this.excludeAlreadyPushed(data.willbepushlist)
-
-    if (Object.keys(pushdata).length === 0) return true
-
-    if (this.force) {
-      return await this.forcepush(pushdata)
-    } else {
-      return await this.getdata(pushdata)
+    const claimed = Object.entries(data.willbepushlist).filter(([id]) => !dispatching.has(id))
+    for (const [id] of claimed) dispatching.add(id)
+    try {
+      const pushdata = await this.excludeAlreadyPushed(Object.fromEntries(claimed))
+      if (Object.keys(pushdata).length === 0) return true
+      return this.force ? await this.forcepush(pushdata) : await this.getdata(pushdata)
+    } finally {
+      for (const [id] of claimed) dispatching.delete(id)
     }
   }
 
@@ -374,6 +378,7 @@ export class Bilibilipush extends Base {
       }
       let send_video = true
       let img: ImageElement[] = []
+      let initialImage: ReturnType<typeof firstImageForTargets<ImageElement[]>> | undefined
       let articleForwardPayload: {
         body: ReturnType<typeof buildBilibiliArticleRichText>
         title?: string
@@ -382,14 +387,30 @@ export class Bilibilipush extends Base {
       } | null = null
       this.injectBotToEventForRender(data[dynamicId].targets)
 
-      const renderOriginal = async <P extends OriginalRoute>(route: P, payload: DataOf<LoadedRegistry[P]>) => {
+      const prepareOriginal = async <P extends OriginalRoute>(route: P, payload: DataOf<LoadedRegistry[P]>) => {
+        let pending: Awaited<ReturnType<typeof firstCommentForDynamic>>
         try {
-          const { rememberOriginal } = await import('./author-comments')
+          const { rememberOriginal, firstCommentForDynamic } = await import('./author-comments')
           rememberOriginal(dynamicId, route, payload)
+          pending = await firstCommentForDynamic(dynamicId)
         } catch {
-          logger.warn('[主播评论] 原动态渲染数据未保存')
+          logger.warn('[主播评论] 首查未完成，继续推送原动态')
         }
-        return Render(this.e, route, payload)
+        return firstImageForTargets<ImageElement[]>(
+          pending,
+          async (card, root) => {
+            if (!card) return Render(this.e, route, payload)
+            const image = await Render(
+              this.e,
+              route,
+              { ...payload, authorComment: card, share_url: `https://t.bilibili.com/${dynamicId}#reply${root}` },
+              { singlePage: true }
+            )
+            if (image.length !== 1) throw new Error('首推合并图未生成')
+            return image
+          },
+          () => logger.warn('[主播评论] 合并图渲染失败，回退原动态')
+        )
       }
 
       if (!skip) {
@@ -414,7 +435,7 @@ export class Bilibilipush extends Base {
               data[dynamicId].Dynamic_Data.modules.module_dynamic.major!.opus.summary.text =
                 `${name}\n\n` + data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.summary?.text
             }
-            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_DRAW', {
+            initialImage = await prepareOriginal('bilibili/dynamic/DYNAMIC_TYPE_DRAW', {
               image_url: Object.values(data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.pics ?? [])
                 .filter((item): item is { url: string } => typeof item?.url === 'string')
                 .map((item) => ({ image_src: item.url })),
@@ -469,7 +490,7 @@ export class Bilibilipush extends Base {
               data[dynamicId].Dynamic_Data.modules.module_dynamic.major?.opus?.summary?.rich_text_nodes ?? []
             )
 
-            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_WORD', {
+            initialImage = await prepareOriginal('bilibili/dynamic/DYNAMIC_TYPE_WORD', {
               text,
               dianzan: Count(data[dynamicId].Dynamic_Data.modules.module_stat.like.count),
               pinglun: Count(data[dynamicId].Dynamic_Data.modules.module_stat.comment.count),
@@ -542,7 +563,7 @@ export class Bilibilipush extends Base {
                 data[dynamicId].Dynamic_Data.modules.module_dynamic.desc?.rich_text_nodes ?? []
               )
 
-              img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_AV', {
+              initialImage = await prepareOriginal('bilibili/dynamic/DYNAMIC_TYPE_AV', {
                 image_url: INFODATA.data.data.pic,
                 text: buildBilibiliDynamicRichText(INFODATA.data.data.title, []),
                 desc: INFODATA.data.data.desc_v2?.length
@@ -728,7 +749,7 @@ export class Bilibilipush extends Base {
                 break
               }
             }
-            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_FORWARD', {
+            initialImage = await prepareOriginal('bilibili/dynamic/DYNAMIC_TYPE_FORWARD', {
               text,
               dianzan: Count(data[dynamicId].Dynamic_Data.modules.module_stat.like.count),
               pinglun: Count(data[dynamicId].Dynamic_Data.modules.module_stat.comment.count),
@@ -781,7 +802,7 @@ export class Bilibilipush extends Base {
             }
 
             // 构建渲染数据
-            img = await renderOriginal('bilibili/dynamic/DYNAMIC_TYPE_ARTICLE', {
+            initialImage = await prepareOriginal('bilibili/dynamic/DYNAMIC_TYPE_ARTICLE', {
               // 用户信息
               usernameMeta: getUsernameMetadata(data[dynamicId].Dynamic_Data.modules.module_author),
               avatar_url: data[dynamicId].Dynamic_Data.modules.module_author.face,
@@ -825,7 +846,7 @@ export class Bilibilipush extends Base {
 
       // 遍历 targets 数组，并发送消息
       for (const target of data[dynamicId].targets) {
-        let status: SendMsgResults | null = null
+        let status: Pick<SendMsgResults, 'messageId'> | null = null
         if (!skip) {
           const { groupId, botId } = target
           const bot = karin.getBot(botId) as AdapterType
@@ -835,7 +856,8 @@ export class Bilibilipush extends Base {
           const eventWithBot = this.e as Message & { bot?: AdapterType; selfId?: string }
           eventWithBot.bot = bot
           eventWithBot.selfId = botId
-          const pushImg = img ?? []
+          const first = await initialImage?.(groupId + ':' + botId)
+          const pushImg = first?.image ?? img
 
           // 仅 QQ 官方机器人支持按钮：非直播动态在卡片末尾追加「解析」回调按钮，点击后下发 #解析 + 动态/视频地址
           const parseUrl = buildParseUrl(data[dynamicId])
@@ -849,8 +871,9 @@ export class Bilibilipush extends Base {
                 ]
               : []
 
-          status = await karin.sendMsg(botId, Contact, [...pushImg, ...parseButton])
-          if (status.messageId) {
+          status = first?.receipt ? { messageId: first.receipt } : await karin.sendMsg(botId, Contact, [...pushImg, ...parseButton])
+          if (status.messageId && !first?.receipt) {
+            first?.acknowledge?.(status.messageId)
             const pushItem = data[dynamicId]
             const identities = [createContentIdentity('bilibili', { dynamic_id: dynamicId })]
             if (pushItem.dynamic_type === DynamicType.AV) {
@@ -1152,7 +1175,7 @@ export class Bilibilipush extends Base {
           }
         }
 
-        if (skip || (status && status?.messageId)) {
+        if (skip || status?.messageId) {
           // 使用新的数据库API添加动态缓存
           await bilibiliDB.addDynamicCache(dynamicId, data[dynamicId].host_mid, target.groupId, data[dynamicId].dynamic_type)
         }

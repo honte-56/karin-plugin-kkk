@@ -38,6 +38,7 @@ export interface WatchedPost extends FeedPost {
   since: number
   threads: Record<string, Thread>
   delivered: Record<string, string[]>
+  firstReceipts?: Record<string, string>
   lastTurn: number
 }
 export interface WatchState {
@@ -260,31 +261,71 @@ export type DeliveryIO<Image> = {
   render: (p: FeedPost, root: string, card: CommentItem, target: string, signature: string) => Promise<Image>
   send: (target: string, image: Image) => Promise<boolean>
 }
-// 待发集合由已发现的发言减去每个群自己的回执得到。主评论作为上下文可重复出现。
+/** 两个发送入口共用相同的组图规则与逐群回执。 */
+export function* pendingComments(post: WatchedPost, target: string) {
+  const sent = new Set(post.delivered[target] ?? [])
+  for (const [root, thread] of Object.entries(post.threads)) {
+    const children = Object.entries(thread.children)
+      .filter(([id]) => !sent.has(id))
+      .sort(([, a], [, b]) => a.ctime - b.ctime)
+    const ids = children.map(([id]) => id)
+    if (thread.card.isUP && !sent.has(root)) ids.unshift(root)
+    if (!ids.length) continue
+    const preview = thread.card.previewReplies ?? []
+    const previewIds = new Set(preview.map((reply) => reply.commentId))
+    const replies = [...preview, ...children.filter(([id]) => !previewIds.has(id)).map(([, reply]) => reply)]
+    yield { root, ids, signature: children.map(([id]) => id).join(','), card: { ...thread.card, replies } }
+  }
+}
+
+export function acknowledgeComments(post: WatchedPost, target: string, ids: string[], checkpoint: () => void) {
+  post.delivered[target] = [...new Set([...(post.delivered[target] ?? []), ...ids])]
+  checkpoint()
+}
+
 export async function deliverPost<Image>(post: WatchedPost, io: DeliveryIO<Image>, checkpoint: () => void) {
-  for (const [root, t] of Object.entries(post.threads)) {
-    const rendered = new Map<string, Image>()
-    for (const target of post.targets) {
-      const sent = post.delivered[target] ?? []
-      const children = Object.entries(t.children)
-        .filter(([id]) => !sent.includes(id))
-        .sort(([, a], [, b]) => a.ctime - b.ctime)
-      const ids = children.map(([id]) => id)
-      if (t.card.isUP && !sent.includes(root)) ids.unshift(root)
-      if (!ids.length || !io.allowed(target)) continue
-      const signature = children.map(([id]) => id).join(',')
-      let image = rendered.get(signature)
+  const rendered = new Map<string, Image>()
+  for (const target of post.targets) {
+    for (const { root, ids, card, signature } of pendingComments(post, target)) {
+      if (!io.allowed(target)) break
+      const key = root + ':' + signature
+      let image = rendered.get(key)
       if (!image) {
-        const preview = t.card.previewReplies ?? []
-        const previewIds = new Set(preview.map((reply) => reply.commentId))
-        const replies = [...preview, ...children.filter(([id]) => !previewIds.has(id)).map(([, reply]) => reply)]
-        image = await io.render(post, root, { ...t.card, replies }, target, signature)
-        rendered.set(signature, image)
+        image = await io.render(post, root, card, target, signature)
+        rendered.set(key, image)
       }
-      if (io.allowed(target) && (await io.send(target, image))) {
-        post.delivered[target] = [...sent, ...ids]
-        checkpoint()
-      }
+      if (io.allowed(target) && (await io.send(target, image))) acknowledgeComments(post, target, ids, checkpoint)
     }
+  }
+}
+
+type InitialComment = { receipt: string } | { root: string; signature: string; card: CommentItem; acknowledge: (receipt: string) => void }
+
+// 首次动态最多附带一个楼层；不同楼层仍各自按原来的评论推送规则投递。
+export function firstImageForTargets<Image>(
+  pending: ((target: string) => InitialComment | undefined) | undefined,
+  render: (card?: CommentItem, root?: string) => Promise<Image>,
+  onCommentRenderError: () => void
+) {
+  let plain: Promise<Image> | undefined
+  const plainImage = () => (plain ??= render())
+  const combined = new Map<string, Promise<Image | undefined>>()
+  return async (target: string) => {
+    const item = pending?.(target)
+    if (item && 'receipt' in item) return { receipt: item.receipt }
+    if (item) {
+      const key = item.root + ':' + item.signature
+      let cached = combined.get(key)
+      if (!cached) {
+        cached = render(item.card, item.root).catch(() => {
+          onCommentRenderError()
+          return undefined
+        })
+        combined.set(key, cached)
+      }
+      const image = await cached
+      if (image !== undefined) return { image, acknowledge: item.acknowledge }
+    }
+    return { image: await plainImage(), acknowledge: undefined }
   }
 }

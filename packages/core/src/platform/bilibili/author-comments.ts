@@ -12,6 +12,8 @@ import { Render } from '@/module/utils/Render'
 import { Root } from '@/root'
 
 import {
+  acknowledgeComments,
+  pendingComments,
   deliverPost,
   discover,
   emptyWatch,
@@ -19,6 +21,7 @@ import {
   scanPost,
   subscriptions,
   type FeedPost,
+  type WatchedPost,
   type WatchState
 } from './author-comment-watch'
 import type { CommentReply, SubReply } from './comments'
@@ -132,6 +135,64 @@ export const commentPages = {
     return { rows: data.replies ?? [], count: data.page.count, size: data.page.size }
   }
 }
+// 即时首查与 :25 定时任务共用请求、冷却及每分钟两个动态的预算。
+const scans = new Map<string, Promise<void>>()
+let budgetMinute = -1
+let checkedThisMinute = 0
+function checkDue(post: WatchedPost): Promise<void> {
+  const existing = scans.get(post.id)
+  if (existing) return existing
+  const time = now()
+  const minute = Math.floor(time / 60)
+  if (minute !== budgetMinute) {
+    budgetMinute = minute
+    checkedThisMinute = 0
+  }
+  if (
+    post.next > time ||
+    time >= post.published + 86400 ||
+    state().cooldown > time ||
+    pushCoolingDown('bilibili') ||
+    checkedThisMinute >= 2
+  )
+    return Promise.resolve()
+  checkedThisMinute++
+  post.lastTurn = time
+  const scan = scanPost(post, time, commentPages, save)
+    .catch((error) => {
+      const e = error as { kind?: string; code?: number; httpStatus?: number }
+      if (e.kind === 'risk' || [-352, -412, 403, 412, 429].includes(e.code ?? 0) || [403, 412, 429].includes(e.httpStatus ?? 0))
+        state().cooldown = now() + 600
+      post.next = e.code === 12061 ? post.published + 86400 : now() + 300
+      save()
+      logger.warn(`[主播评论] 动态 ${post.id} 检查失败（${e.code ?? e.kind ?? '网络错误'}），保留进度`)
+    })
+    .finally(() => scans.delete(post.id))
+  scans.set(post.id, scan)
+  return scan
+}
+
+export async function firstCommentForDynamic(id: string) {
+  const post = state().posts[id]
+  if (!post || now() >= post.published + 86400 || !enabled().has(post.uid)) return
+  if (!post.checked || scans.has(id)) await checkDue(post)
+  return (target: string) => {
+    const receipt = post.firstReceipts?.[target]
+    if (receipt) return { receipt }
+    if (!post.targets.includes(target) || !enabled().get(post.uid)?.includes(target)) return
+    const entry = pendingComments(post, target).next().value
+    if (!entry) return
+    return {
+      ...entry,
+      acknowledge: (receipt: string) => {
+        post.firstReceipts ??= {}
+        post.firstReceipts[target] = receipt
+        acknowledgeComments(post, target, entry.ids, save)
+      }
+    }
+  }
+}
+
 export async function runCommentWatch() {
   if (running) return
   running = true
@@ -141,24 +202,20 @@ export async function runCommentWatch() {
     for (const [key, cached] of retryImages) if (cached.expires <= now()) retryImages.delete(key)
     // 限制为每分钟最多两个动态，每个动态至多三次分页请求。
     const posts = Object.values(store.posts).sort((a, b) => a.lastTurn - b.lastTurn)
-    let budget = 2
     for (const post of posts) {
       if (now() >= post.published + 86400) continue
-      if (budget > 0 && post.next <= now() && store.cooldown <= now() && !pushCoolingDown('bilibili')) {
-        budget--
-        post.lastTurn = now()
-        try {
-          await scanPost(post, now(), commentPages, save)
-        } catch (error) {
-          const e = error as { kind?: string; code?: number; httpStatus?: number }
-          if (e.kind === 'risk' || [-352, -412, 403, 412, 429].includes(e.code ?? 0) || [403, 412, 429].includes(e.httpStatus ?? 0))
-            store.cooldown = now() + 600
-          post.next = e.code === 12061 ? post.published + 86400 : now() + 300
-          save()
-          logger.warn(`[主播评论] 动态 ${post.id} 检查失败（${e.code ?? e.kind ?? '网络错误'}），保留进度`)
-        }
+      await checkDue(post)
+      const ready = new Set<string>()
+      for (const target of post.targets) {
+        if (pendingComments(post, target).next().done) continue
+        const [group, bot] = target.split(':')
+        if (!karin.getAllBotID().includes(bot) || !enabled().get(post.uid)?.includes(target)) continue
+        // 新动态仍在首次发送或等待失败群重试时，由动态任务拥有该群的发送权。
+        const { bilibiliDB } = await import('@/module/db')
+        if (await bilibiliDB.isDynamicPushed(post.id, Number(post.uid), group)) ready.add(target)
       }
       const allowed = (target: string) =>
+        ready.has(target) &&
         now() < post.published + 86400 &&
         (enabled().get(post.uid)?.includes(target) ?? false) &&
         karin.getAllBotID().includes(target.split(':')[1])
